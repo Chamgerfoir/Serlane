@@ -1117,7 +1117,10 @@
       setRoomStatus('error', '连接已断开');
       els.retryRoom.hidden = false;
     }
-    if (wasConnected) showRoomMessage('连接已断开，可以重新打开分享链接或重新连接。');
+    if (wasConnected) {
+      showRoomMessage('连接已断开，可以重新打开分享链接或重新连接。');
+      showToast('连接已断开');
+    }
     if (selectedFiles.length) renderPendingFiles();
   }
 
