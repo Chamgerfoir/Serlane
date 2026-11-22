@@ -70,12 +70,16 @@ window.SERLANE_ACCOUNTS = [
 
 当前 `chat-accounts.js` 已按用户提供的账号配置，并补了非空系统提示词。
 
-> 这是纯前端账号方案，页面源码与浏览器本地存储中的密码、API Key 都可被读取。当前用于自用部署，不应当作真正的权限系统；若要公开给他人使用，应改为服务端代理。
+> 这是纯前端账号方案，页面源码与浏览器本地存储中的密码、API Key 都可被读取。当前按自用场景部署；若要开放给他人使用，应改为服务端代理。
 
 DeepSeek 文档：
 
 - <https://api-docs.deepseek.com/zh-cn/api/create-chat-completion>
 - <https://api-docs.deepseek.com/zh-cn/guides/web_tools>
+
+## 在线地址
+
+<https://chamgerfoir.github.io/Serlane/>
 
 ## 文件
 
