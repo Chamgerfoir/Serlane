@@ -6,6 +6,7 @@
 
   const STORAGE_KEY = 'dukou.state.v1';
   const CHAT_SESSION_KEY = 'serlane.chat.session.v1';
+  const CHAT_HISTORY_KEY = 'serlane.chat.history.v1';
   const CHAT_VAULT_KEY = 'serlane.chat.vault.v1';
   const CHAT_PREFS_KEY = 'serlane.chat.prefs.v1';
   const MAX_SITES = 200;
@@ -133,21 +134,37 @@
     authAccountPanel: document.getElementById('auth-account-panel'),
     authKeyPanel: document.getElementById('auth-key-panel'),
     keyForm: document.getElementById('key-form'),
+    keyUser: document.getElementById('key-user'),
+    keyPass: document.getElementById('key-pass'),
     keyInput: document.getElementById('key-input'),
+    keyPrompt: document.getElementById('key-prompt'),
     keyMessage: document.getElementById('key-message'),
     keySubmit: document.getElementById('key-submit'),
     manageAuth: document.getElementById('manage-auth'),
-    accountDialog: document.getElementById('account-dialog'),
     vaultList: document.getElementById('vault-list'),
     vaultClear: document.getElementById('vault-clear'),
     vaultLogout: document.getElementById('vault-logout'),
     chatApp: document.getElementById('chat-app'),
-    chatUser: document.getElementById('chat-user'),
+    chatTitle: document.getElementById('chat-title'),
     chatModel: document.getElementById('chat-model'),
+    chatMenu: document.getElementById('chat-menu'),
     chatSearch: document.getElementById('chat-search'),
     chatThink: document.getElementById('chat-think'),
     chatNew: document.getElementById('chat-new'),
-    chatAccount: document.getElementById('chat-account'),
+    chatDrawer: document.getElementById('chat-drawer'),
+    chatDrawerBackdrop: document.getElementById('chat-drawer-backdrop'),
+    drawerClose: document.getElementById('drawer-close'),
+    drawerTabHistory: document.getElementById('drawer-tab-history'),
+    drawerTabAccount: document.getElementById('drawer-tab-account'),
+    drawerHistoryPanel: document.getElementById('drawer-history-panel'),
+    drawerAccountPanel: document.getElementById('drawer-account-panel'),
+    drawerNewChat: document.getElementById('drawer-new-chat'),
+    drawerAccountName: document.getElementById('drawer-account-name'),
+    drawerAccountModel: document.getElementById('drawer-account-model'),
+    drawerLogin: document.getElementById('drawer-login'),
+    conversationList: document.getElementById('conversation-list'),
+    historyEmpty: document.getElementById('history-empty'),
+    historyClear: document.getElementById('history-clear'),
     chatMessages: document.getElementById('chat-messages'),
     chatWelcome: document.getElementById('chat-welcome'),
     chatStatus: document.getElementById('chat-status'),
@@ -187,6 +204,8 @@
   let chatSession = loadChatSession();
   let chatHistory = [];
   let chatBusy = false;
+  let activeConversationId = '';
+  let chatStore = { version: 1, conversations: [] };
   let chatController = null;
   let searchEnabled = true;
   let thinkingEnabled = false;
@@ -787,6 +806,8 @@
 
   function applyRoute() {
     const route = routeFromHash();
+    document.body.dataset.route = route;
+    if (route !== 'song') closeChatDrawer(true);
     els.views.forEach((view) => {
       const active = view.dataset.view === route;
       view.hidden = !active;
@@ -2092,7 +2113,7 @@
   }
 
   function defaultChatPrompt() {
-    return '你是「颂」，石径松轩中的 AI 助手。请使用与用户相同的语言，回答简洁、准确、直接。遇到实时信息或需要核实的事实，优先使用联网搜索并附上来源。';
+    return '你可以使用 Markdown 和 LaTeX 来组织回答。';
   }
 
   function hashString(value) {
@@ -2109,21 +2130,29 @@
     return value.slice(0, 7) + '…' + value.slice(-4);
   }
 
+  function cleanSystemPrompt(value) {
+    const text = typeof value === 'string' ? value.trim() : '';
+    if (!text) return defaultChatPrompt();
+    if (text.includes('石径松轩中的 AI 助手') || text.includes('石径松轩的 AI 助手')) {
+      return defaultChatPrompt();
+    }
+    return text;
+  }
+
   function normalizeChatSession(raw) {
     if (!raw || typeof raw !== 'object' || typeof raw.apiKey !== 'string' || !raw.apiKey) return null;
     const kind = raw.kind === 'key' ? 'key' : 'account';
     return {
       kind,
       entryId: typeof raw.entryId === 'string' ? raw.entryId : '',
+      lastConversationId: typeof raw.lastConversationId === 'string' ? raw.lastConversationId : '',
       username: typeof raw.username === 'string' ? raw.username : '',
       displayName: typeof raw.displayName === 'string' && raw.displayName
         ? raw.displayName
         : (kind === 'key' ? '手动 API Key' : raw.username || '已登录'),
       apiKey: raw.apiKey,
       model: typeof raw.model === 'string' && raw.model ? raw.model : 'deepseek-flash',
-      systemPrompt: typeof raw.systemPrompt === 'string' && raw.systemPrompt.trim()
-        ? raw.systemPrompt
-        : defaultChatPrompt()
+      systemPrompt: cleanSystemPrompt(raw.systemPrompt)
     };
   }
 
@@ -2156,14 +2185,13 @@
     return {
       id: typeof raw.id === 'string' && raw.id ? raw.id : randomId(),
       kind,
+      source: kind === 'key' ? 'key' : (raw.source === 'local' ? 'local' : 'config'),
       username: typeof raw.username === 'string' ? raw.username : '',
       password: typeof raw.password === 'string' ? raw.password : '',
       displayName: typeof raw.displayName === 'string' ? raw.displayName : '',
       apiKey: raw.apiKey,
       model: typeof raw.model === 'string' && raw.model ? raw.model : 'deepseek-flash',
-      systemPrompt: typeof raw.systemPrompt === 'string' && raw.systemPrompt.trim()
-        ? raw.systemPrompt
-        : defaultChatPrompt(),
+      systemPrompt: cleanSystemPrompt(raw.systemPrompt),
       updatedAt: Number.isFinite(raw.updatedAt) ? raw.updatedAt : Date.now()
     };
   }
@@ -2209,12 +2237,14 @@
   function sessionFromEntry(entry) {
     return {
       kind: entry.kind,
+      source: entry.source || (entry.kind === 'account' ? 'config' : 'key'),
       entryId: entry.id,
+      lastConversationId: '',
       username: entry.username || '',
-      displayName: entry.displayName || (entry.kind === 'account' ? entry.username : '手动 API Key'),
+      displayName: entry.displayName || (entry.kind === 'account' ? entry.username : '旧版 API Key'),
       apiKey: entry.apiKey,
       model: entry.model || 'deepseek-flash',
-      systemPrompt: entry.systemPrompt || defaultChatPrompt()
+      systemPrompt: cleanSystemPrompt(entry.systemPrompt)
     };
   }
 
@@ -2236,6 +2266,7 @@
         ? 'account:' + chatSession.username
         : 'key:' + hashString(chatSession.apiKey)),
       kind: chatSession.kind,
+      source: chatSession.source || (chatSession.kind === 'account' ? 'config' : 'key'),
       username: chatSession.username,
       password: '',
       displayName: chatSession.displayName,
@@ -2284,7 +2315,7 @@
     els.chatSearch.disabled = !ready;
     els.chatThink.disabled = !ready;
     els.chatNew.disabled = !ready;
-    els.chatAccount.disabled = chatBusy;
+    els.chatMenu.disabled = chatBusy;
   }
 
   function showLogin() {
@@ -2293,14 +2324,20 @@
     els.chatInput.disabled = true;
     els.chatSend.disabled = true;
     els.chatStop.hidden = true;
+    els.drawerAccountName.textContent = '未登录';
+    els.drawerAccountModel.textContent = '登录后管理本机账号';
     updateChatControls();
   }
 
   function showChat() {
     els.loginPanel.hidden = true;
     els.chatApp.hidden = false;
-    els.chatUser.textContent = chatSession.displayName || chatSession.username || '已登录';
-    els.chatModel.textContent = (chatSession.model || 'deepseek-flash') + ' · 通过 API 直连';
+    els.chatTitle.textContent = '新对话';
+    els.chatModel.textContent = (chatSession.model || 'deepseek-flash') + ' · API 直连';
+    els.drawerAccountName.textContent = chatSession.displayName || chatSession.username || '已登录';
+    els.drawerAccountModel.textContent = (chatSession.model || 'deepseek-flash') + ' · 已登录';
+    restoreConversationForSession();
+    renderVault();
     updateChatControls();
   }
 
@@ -2326,7 +2363,7 @@
       els.chatSearch.disabled = true;
       els.chatThink.disabled = true;
       els.chatNew.disabled = true;
-      els.chatAccount.disabled = true;
+      els.chatMenu.disabled = true;
     } else {
       els.chatStop.hidden = true;
       updateChatControls();
@@ -2358,9 +2395,10 @@
 
   function activateSession(session) {
     chatSession = session;
-    chatSession.systemPrompt = chatSession.systemPrompt || defaultChatPrompt();
+    chatSession.systemPrompt = cleanSystemPrompt(chatSession.systemPrompt);
     saveChatSession(chatSession);
     ensureSessionInVault();
+    activeConversationId = '';
     resetChatMessages();
     showChat();
   }
@@ -2369,12 +2407,28 @@
     const username = els.loginUser.value.trim();
     const password = els.loginPass.value;
     const accounts = getAccounts();
-    if (!accounts.length) {
-      showLoginMessage('还没有配置账号，请先编辑 chat-accounts.js');
+    const account = accounts.find((entry) => entry.username === username);
+
+    if (!account) {
+      const saved = loadVault().find((entry) => (
+        entry.kind === 'account' &&
+        entry.username === username &&
+        entry.password === password
+      ));
+      if (!saved) {
+        showLoginMessage(accounts.length || loadVault().length
+          ? '账号或密码不正确'
+          : '还没有配置账号，请先在 API Key 页建立本地账号');
+        return;
+      }
+      showLoginMessage('');
+      els.loginForm.reset();
+      activateSession(sessionFromEntry(saved));
+      showToast('已登录');
       return;
     }
-    const account = accounts.find((entry) => entry.username === username);
-    if (!account || account.password !== password) {
+
+    if (account.password !== password) {
       showLoginMessage('账号或密码不正确');
       return;
     }
@@ -2386,12 +2440,13 @@
     const entry = {
       id: 'account:' + account.username,
       kind: 'account',
+      source: 'config',
       username: account.username,
       password: account.password,
       displayName: account.displayName || account.username,
       apiKey: account.apiKey,
       model: account.model || 'deepseek-flash',
-      systemPrompt: account.systemPrompt || defaultChatPrompt()
+      systemPrompt: cleanSystemPrompt(account.systemPrompt)
     };
     upsertVault(entry);
     showLoginMessage('');
@@ -2401,32 +2456,61 @@
   }
 
   function loginWithKey() {
+    const username = els.keyUser.value.trim();
+    const password = els.keyPass.value;
     const apiKey = els.keyInput.value.trim();
+    const customPrompt = els.keyPrompt.value.trim();
+    if (!username) {
+      showKeyMessage('请填写本地账号名称');
+      els.keyUser.focus();
+      return;
+    }
+    if (username.length > 32) {
+      showKeyMessage('账号名称最多 32 个字符');
+      els.keyUser.focus();
+      return;
+    }
+    if (!password) {
+      showKeyMessage('请填写本地账号密码');
+      els.keyPass.focus();
+      return;
+    }
     if (!/^sk-[A-Za-z0-9_-]{10,}$/.test(apiKey)) {
       showKeyMessage('请输入有效的 DeepSeek API Key');
       els.keyInput.focus();
       return;
     }
-    const id = 'key:' + hashString(apiKey);
+
+    const id = 'local:' + username;
+    const existing = loadVault().find((entry) => entry.id === id);
+    if (existing && existing.password !== password) {
+      showKeyMessage('这个本地账号已存在，密码不正确');
+      els.keyPass.focus();
+      return;
+    }
+
     const entry = {
       id,
-      kind: 'key',
-      username: '',
-      password: '',
-      displayName: '手动 API Key',
+      kind: 'account',
+      source: 'local',
+      username,
+      password,
+      displayName: username,
       apiKey,
       model: 'deepseek-flash',
-      systemPrompt: defaultChatPrompt()
+      systemPrompt: customPrompt || defaultChatPrompt()
     };
     upsertVault(entry);
     showKeyMessage('');
+    els.keyUser.value = '';
+    els.keyPass.value = '';
     els.keyInput.value = '';
+    els.keyPrompt.value = '';
     activateSession(sessionFromEntry(entry));
-    showToast('API Key 已保存在本机');
+    showToast('本地账号已保存');
   }
 
   function logout(options) {
-    const keepVault = Boolean(options && options.keepVault);
     if (chatBusy && chatController) {
       try { chatController.abort(); } catch (error) {}
     }
@@ -2434,16 +2518,20 @@
     chatSession = null;
     chatBusy = false;
     chatHistory = [];
+    activeConversationId = '';
     setChatStatus('');
     Array.from(els.chatMessages.querySelectorAll('.chat-message')).forEach((message) => message.remove());
     els.chatWelcome.hidden = false;
     showLoginMessage('');
     showKeyMessage('');
     els.loginPass.value = '';
+    els.keyUser.value = '';
+    els.keyPass.value = '';
     els.keyInput.value = '';
-    if (els.accountDialog.open) els.accountDialog.close();
+    els.keyPrompt.value = '';
+    closeChatDrawer(true);
     showLogin();
-    if (!keepVault) renderVault();
+    renderVault();
   }
 
   function renderVault() {
@@ -2470,7 +2558,7 @@
         const name = document.createElement('strong');
         name.textContent = entry.kind === 'account'
           ? (entry.username || '未命名账号')
-          : (entry.displayName || '手动 API Key');
+          : (entry.displayName || '旧版 API Key');
         head.appendChild(kind);
         head.appendChild(name);
         if (active) {
@@ -2488,7 +2576,11 @@
 
         const meta = document.createElement('p');
         meta.className = 'vault-meta';
-        meta.textContent = (entry.model || 'deepseek-flash') + (entry.kind === 'account' ? ' · 密码已保存在本机' : ' · 导入的 Key');
+        meta.textContent = (entry.model || 'deepseek-flash') + (
+          entry.kind === 'account'
+            ? (entry.source === 'local' ? ' · 本地账号 · 密码已保存' : ' · 配置账号 · 密码已保存')
+            : ' · 旧版导入 Key'
+        );
         info.appendChild(meta);
         item.appendChild(info);
 
@@ -2515,21 +2607,14 @@
 
     els.vaultLogout.hidden = !chatSession;
     els.vaultClear.disabled = !chatSession && vault.length === 0;
-  }
-
-  function openAccountManager() {
-    vaultClearArmed = false;
-    window.clearTimeout(vaultClearTimer);
-    els.vaultClear.textContent = '清除全部';
-    renderVault();
-    if (!els.accountDialog.open) els.accountDialog.showModal();
+    els.drawerLogin.hidden = Boolean(chatSession);
   }
 
   function useVaultEntry(id) {
     const entry = loadVault().find((item) => item.id === id);
     if (!entry) return;
     activateSession(sessionFromEntry(entry));
-    els.accountDialog.close();
+    closeChatDrawer();
     showToast('已切换账号');
   }
 
@@ -2553,6 +2638,7 @@
     chatSession = null;
     chatBusy = false;
     chatHistory = [];
+    activeConversationId = '';
     setChatStatus('');
     try { localStorage.removeItem(CHAT_VAULT_KEY); } catch (error) {}
     Array.from(els.chatMessages.querySelectorAll('.chat-message')).forEach((message) => message.remove());
@@ -2560,11 +2646,474 @@
     showLoginMessage('');
     showKeyMessage('');
     els.loginPass.value = '';
+    els.keyUser.value = '';
+    els.keyPass.value = '';
     els.keyInput.value = '';
-    if (els.accountDialog.open) els.accountDialog.close();
+    els.keyPrompt.value = '';
+    closeChatDrawer(true);
     showLogin();
     renderVault();
     showToast('本机账号数据已清除');
+  }
+
+  /* -------------------------------------------------------------
+     Chat history, drawer and math rendering
+  ------------------------------------------------------------- */
+
+  let katexPromise = null;
+  let historyClearArmed = false;
+  let historyClearTimer = 0;
+  let drawerCloseTimer = 0;
+
+  function hasMath(text) {
+    return /\$\$|\$[^$\n]+\$|\\\(|\\\[/.test(String(text || ''));
+  }
+
+  function ensureKatex() {
+    if (window.renderMathInElement) return Promise.resolve();
+    if (katexPromise) return katexPromise;
+    katexPromise = new Promise((resolve) => {
+      const loadAutoRender = () => {
+        if (window.renderMathInElement) {
+          resolve();
+          return;
+        }
+        const script = document.createElement('script');
+        script.src = 'vendor/katex/auto-render.min.js';
+        script.onload = () => resolve();
+        script.onerror = () => resolve();
+        document.head.appendChild(script);
+      };
+      if (window.katex) {
+        loadAutoRender();
+        return;
+      }
+      const script = document.createElement('script');
+      script.src = 'vendor/katex/katex.min.js';
+      script.onload = loadAutoRender;
+      script.onerror = () => resolve();
+      document.head.appendChild(script);
+    });
+    return katexPromise;
+  }
+
+  function renderMathIn(container) {
+    if (!window.renderMathInElement || !container.isConnected) return;
+    try {
+      window.renderMathInElement(container, {
+        delimiters: [
+          { left: '$$', right: '$$', display: true },
+          { left: '\\[', right: '\\]', display: true },
+          { left: '$', right: '$', display: false },
+          { left: '\\(', right: '\\)', display: false }
+        ],
+        throwOnError: false,
+        strict: false
+      });
+    } catch (error) {}
+  }
+
+  function renderRichText(container, text) {
+    renderChatMarkdown(container, text);
+    if (hasMath(text)) {
+      ensureKatex().then(() => renderMathIn(container));
+    }
+  }
+
+  function normalizeStoredCitation(value) {
+    if (!value || typeof value !== 'object') return null;
+    if (!isSafeLink(value.url)) return null;
+    return {
+      url: value.url,
+      title: typeof value.title === 'string' ? value.title : ''
+    };
+  }
+
+  function normalizeStoredMessage(value) {
+    if (!value || typeof value !== 'object') return null;
+    const role = value.role === 'assistant' ? 'assistant' : (value.role === 'user' ? 'user' : '');
+    if (!role || typeof value.content !== 'string') return null;
+    return {
+      role,
+      content: value.content,
+      reasoning: typeof value.reasoning === 'string' ? value.reasoning : '',
+      citations: Array.isArray(value.citations) ? value.citations.map(normalizeStoredCitation).filter(Boolean) : [],
+      at: Number.isFinite(value.at) ? value.at : Date.now()
+    };
+  }
+
+  function normalizeConversation(value) {
+    if (!value || typeof value !== 'object') return null;
+    if (typeof value.ownerId !== 'string' || !value.ownerId) return null;
+    const messages = Array.isArray(value.messages) ? value.messages.map(normalizeStoredMessage).filter(Boolean) : [];
+    return {
+      id: typeof value.id === 'string' && value.id ? value.id : randomId(),
+      ownerId: value.ownerId,
+      title: typeof value.title === 'string' && value.title ? value.title : '新对话',
+      messages: messages.slice(-120),
+      createdAt: Number.isFinite(value.createdAt) ? value.createdAt : Date.now(),
+      updatedAt: Number.isFinite(value.updatedAt) ? value.updatedAt : Date.now()
+    };
+  }
+
+  function loadChatStore() {
+    try {
+      const raw = JSON.parse(localStorage.getItem(CHAT_HISTORY_KEY) || 'null');
+      const conversations = raw && Array.isArray(raw.conversations)
+        ? raw.conversations.map(normalizeConversation).filter(Boolean)
+        : [];
+      return { version: 1, conversations: conversations.slice(0, 80) };
+    } catch (error) {
+      return { version: 1, conversations: [] };
+    }
+  }
+
+  function saveChatStore() {
+    const ordered = chatStore.conversations
+      .slice()
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .slice(0, 80);
+    chatStore = { version: 1, conversations: ordered };
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      try {
+        localStorage.setItem(CHAT_HISTORY_KEY, JSON.stringify(chatStore));
+        return true;
+      } catch (error) {
+        if (chatStore.conversations.length <= 1) break;
+        chatStore.conversations = chatStore.conversations.slice(0, Math.max(1, chatStore.conversations.length - 6));
+      }
+    }
+    showToast('历史记录保存失败');
+    return false;
+  }
+
+  function currentOwnerId() {
+    return chatSession && chatSession.entryId ? chatSession.entryId : '';
+  }
+
+  function conversationsForOwner() {
+    const owner = currentOwnerId();
+    if (!owner) return [];
+    return chatStore.conversations
+      .filter((conversation) => conversation.ownerId === owner)
+      .slice()
+      .sort((a, b) => b.updatedAt - a.updatedAt);
+  }
+
+  function findConversation(id) {
+    return chatStore.conversations.find((conversation) => (
+      conversation.id === id && conversation.ownerId === currentOwnerId()
+    )) || null;
+  }
+
+  function conversationTitle(text) {
+    const line = String(text || '').replace(/\s+/g, ' ').trim();
+    if (!line) return '新对话';
+    return line.length > 28 ? line.slice(0, 28) + '…' : line;
+  }
+
+  function updateChatHeaderTitle() {
+    const conversation = activeConversationId ? findConversation(activeConversationId) : null;
+    els.chatTitle.textContent = conversation ? conversation.title : '新对话';
+    els.chatTitle.title = conversation ? conversation.title : '新对话';
+  }
+
+  function formatHistoryDate(timestamp) {
+    const date = new Date(timestamp);
+    const now = new Date();
+    if (date.toDateString() === now.toDateString()) {
+      return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+    }
+    return date.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' });
+  }
+
+  function renderConversationList() {
+    const conversations = conversationsForOwner();
+    els.conversationList.replaceChildren();
+    els.historyEmpty.hidden = conversations.length > 0;
+    els.historyEmpty.textContent = chatSession ? '还没有历史对话。' : '登录后显示历史对话。';
+    els.historyClear.hidden = conversations.length === 0;
+    els.drawerNewChat.disabled = !chatSession;
+
+    conversations.forEach((conversation) => {
+      const item = document.createElement('div');
+      item.className = 'conversation-item' + (conversation.id === activeConversationId ? ' is-active' : '');
+
+      const open = document.createElement('button');
+      open.type = 'button';
+      open.className = 'conversation-open';
+      open.dataset.conversationId = conversation.id;
+
+      const title = document.createElement('span');
+      title.className = 'conversation-title';
+      title.textContent = conversation.title;
+      open.appendChild(title);
+
+      const meta = document.createElement('span');
+      meta.className = 'conversation-meta';
+      meta.textContent = formatHistoryDate(conversation.updatedAt) + ' · ' + Math.ceil(conversation.messages.length / 2) + ' 轮';
+      open.appendChild(meta);
+      item.appendChild(open);
+
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'conversation-delete';
+      remove.dataset.deleteConversation = conversation.id;
+      remove.setAttribute('aria-label', '删除对话：' + conversation.title);
+      remove.appendChild(icon('i-trash'));
+      item.appendChild(remove);
+
+      els.conversationList.appendChild(item);
+    });
+  }
+
+  function ensureActiveConversation() {
+    if (!chatSession) return null;
+    if (activeConversationId) {
+      const existing = findConversation(activeConversationId);
+      if (existing) return existing;
+    }
+    const now = Date.now();
+    const conversation = {
+      id: randomId(),
+      ownerId: currentOwnerId(),
+      title: '新对话',
+      messages: [],
+      createdAt: now,
+      updatedAt: now
+    };
+    chatStore.conversations.unshift(conversation);
+    activeConversationId = conversation.id;
+    if (chatSession) {
+      chatSession.lastConversationId = conversation.id;
+      saveChatSession(chatSession);
+    }
+    return conversation;
+  }
+
+  function persistConversation(conversation) {
+    conversation.updatedAt = Date.now();
+    const index = chatStore.conversations.findIndex((item) => item.id === conversation.id);
+    if (index >= 0) chatStore.conversations.splice(index, 1, conversation);
+    else chatStore.conversations.unshift(conversation);
+    if (chatSession) {
+      chatSession.lastConversationId = conversation.id;
+      saveChatSession(chatSession);
+    }
+    saveChatStore();
+    updateChatHeaderTitle();
+    renderConversationList();
+  }
+
+  function addUserMessageToHistory(content) {
+    const conversation = ensureActiveConversation();
+    if (!conversation) return;
+    if (!conversation.messages.length) conversation.title = conversationTitle(content);
+    conversation.messages.push({ role: 'user', content, at: Date.now() });
+    chatHistory = conversation.messages.map((message) => ({ role: message.role, content: message.content }));
+    persistConversation(conversation);
+  }
+
+  function addAssistantMessageToHistory(content, reasoning, citations) {
+    const conversation = ensureActiveConversation();
+    if (!conversation) return;
+    const message = {
+      role: 'assistant',
+      content,
+      reasoning: reasoning || '',
+      citations: citations || [],
+      at: Date.now()
+    };
+    conversation.messages.push(message);
+    chatHistory = conversation.messages.map((item) => ({ role: item.role, content: item.content }));
+    persistConversation(conversation);
+  }
+
+  function createReasoningBlock(ref) {
+    const block = document.createElement('blockquote');
+    block.className = 'chat-reasoning';
+    const header = document.createElement('div');
+    header.className = 'chat-reasoning-head';
+    header.appendChild(icon('i-sparkle'));
+    header.appendChild(document.createTextNode('思考过程'));
+    const body = document.createElement('div');
+    body.className = 'chat-reasoning-body';
+    block.appendChild(header);
+    block.appendChild(body);
+    ref.row.insertBefore(block, ref.bubble);
+    return { block, body };
+  }
+
+  function renderReasoningBlock(ref, reasoning) {
+    if (!reasoning || !reasoning.trim()) return null;
+    const view = createReasoningBlock(ref);
+    renderRichText(view.body, reasoning);
+    return view;
+  }
+
+  function renderAssistantRecord(message) {
+    const ref = appendChatMessage('assistant', '');
+    if (message.reasoning) renderReasoningBlock(ref, message.reasoning);
+    ref.copyText = message.content;
+    renderRichText(ref.bubble, message.content);
+    const citations = dedupeCitations(message.citations || []);
+    addChatSources(ref, citations);
+    addChatCopy(ref);
+    return ref;
+  }
+
+  function renderConversation(conversation) {
+    activeConversationId = conversation.id;
+    if (chatSession) {
+      chatSession.lastConversationId = conversation.id;
+      saveChatSession(chatSession);
+    }
+    Array.from(els.chatMessages.querySelectorAll('.chat-message')).forEach((message) => message.remove());
+    els.chatWelcome.hidden = conversation.messages.length > 0;
+    chatHistory = [];
+    conversation.messages.forEach((message) => {
+      if (message.role === 'user') {
+        appendChatMessage('user', message.content);
+      } else {
+        renderAssistantRecord(message);
+      }
+      chatHistory.push({ role: message.role, content: message.content });
+    });
+    updateChatHeaderTitle();
+    renderConversationList();
+    window.setTimeout(() => {
+      els.chatMessages.scrollTop = els.chatMessages.scrollHeight;
+    }, 30);
+  }
+
+  function openConversation(id, options) {
+    if (chatBusy) return;
+    const conversation = findConversation(id);
+    if (!conversation) return;
+    renderConversation(conversation);
+    if (!options || !options.silent) {
+      closeChatDrawer();
+      els.chatInput.focus();
+    }
+  }
+
+  function restoreConversationForSession() {
+    if (!chatSession) return;
+    const conversations = conversationsForOwner();
+    if (!conversations.length) {
+      activeConversationId = '';
+      chatHistory = [];
+      resetChatMessages();
+      updateChatHeaderTitle();
+      renderConversationList();
+      return;
+    }
+    const lastId = chatSession.lastConversationId;
+    const target = lastId ? findConversation(lastId) : null;
+    const conversation = target || conversations[0];
+    renderConversation(conversation);
+  }
+
+  function startNewChat() {
+    if (chatBusy) return;
+    activeConversationId = '';
+    chatHistory = [];
+    if (chatSession) {
+      chatSession.lastConversationId = '';
+      saveChatSession(chatSession);
+    }
+    resetChatMessages();
+    els.chatInput.value = '';
+    updateChatHeaderTitle();
+    renderConversationList();
+    closeChatDrawer();
+    els.chatInput.focus();
+  }
+
+  function deleteConversation(id) {
+    chatStore.conversations = chatStore.conversations.filter((conversation) => conversation.id !== id);
+    saveChatStore();
+    if (activeConversationId === id) {
+      activeConversationId = '';
+      chatHistory = [];
+      if (chatSession) {
+        chatSession.lastConversationId = '';
+        saveChatSession(chatSession);
+      }
+      resetChatMessages();
+      updateChatHeaderTitle();
+    }
+    renderConversationList();
+    showToast('对话已删除');
+  }
+
+  function clearHistoryForOwner() {
+    const owner = currentOwnerId();
+    if (!owner) return;
+    chatStore.conversations = chatStore.conversations.filter((conversation) => conversation.ownerId !== owner);
+    saveChatStore();
+    activeConversationId = '';
+    chatHistory = [];
+    if (chatSession) {
+      chatSession.lastConversationId = '';
+      saveChatSession(chatSession);
+    }
+    resetChatMessages();
+    updateChatHeaderTitle();
+    renderConversationList();
+    showToast('历史对话已清空');
+  }
+
+  function setDrawerTab(tab) {
+    const account = tab === 'account';
+    els.drawerTabHistory.classList.toggle('is-active', !account);
+    els.drawerTabAccount.classList.toggle('is-active', account);
+    els.drawerTabHistory.setAttribute('aria-pressed', !account ? 'true' : 'false');
+    els.drawerTabAccount.setAttribute('aria-pressed', account ? 'true' : 'false');
+    els.drawerHistoryPanel.hidden = account;
+    els.drawerAccountPanel.hidden = !account;
+    if (account) renderVault();
+    else renderConversationList();
+  }
+
+  function openChatDrawer(tab) {
+    vaultClearArmed = false;
+    window.clearTimeout(vaultClearTimer);
+    els.vaultClear.textContent = '清除全部';
+    historyClearArmed = false;
+    window.clearTimeout(historyClearTimer);
+    els.historyClear.textContent = '清空';
+    renderConversationList();
+    renderVault();
+    setDrawerTab(tab || 'history');
+    window.clearTimeout(drawerCloseTimer);
+    els.chatDrawer.hidden = false;
+    els.chatDrawerBackdrop.hidden = false;
+    document.body.classList.add('drawer-open');
+    window.requestAnimationFrame(() => {
+      els.chatDrawer.classList.add('is-open');
+      els.chatDrawerBackdrop.classList.add('is-open');
+    });
+  }
+
+  function closeChatDrawer(immediate) {
+    historyClearArmed = false;
+    window.clearTimeout(historyClearTimer);
+    if (els.historyClear) els.historyClear.textContent = '清空';
+    vaultClearArmed = false;
+    window.clearTimeout(vaultClearTimer);
+    if (els.vaultClear) els.vaultClear.textContent = '清除全部';
+    if (!els.chatDrawer || els.chatDrawer.hidden) return;
+    els.chatDrawer.classList.remove('is-open');
+    els.chatDrawerBackdrop.classList.remove('is-open');
+    document.body.classList.remove('drawer-open');
+    window.clearTimeout(drawerCloseTimer);
+    const hide = () => {
+      els.chatDrawer.hidden = true;
+      els.chatDrawerBackdrop.hidden = true;
+    };
+    if (immediate) hide();
+    else drawerCloseTimer = window.setTimeout(hide, 190);
   }
 
   function appendChatMessage(role, content) {
@@ -2587,7 +3136,7 @@
   }
 
   function appendChatInline(parent, text) {
-    const tokens = String(text).split(/(`[^`\n]+`|\*\*[^*\n]+\*\*|\[[^\]\n]+\]\(https?:\/\/[^\s)]+\))/g);
+    const tokens = String(text).split(/(`[^`\n]+`|\$\$[\s\S]+?\$\$|\$[^$\n]+?\$|\\\([\s\S]+?\\\)|\\\[[\s\S]+?\\\]|\*\*[^*\n]+\*\*|__[^_\n]+__|~~[^~\n]+~~|\[[^\]\n]+\]\(https?:\/\/[^\s)]+\)|\*[^*\n]+\*|_[^_\n]+_)/g);
     tokens.forEach((token) => {
       if (!token) return;
       if (token.startsWith('`') && token.endsWith('`') && token.length > 2) {
@@ -2596,10 +3145,35 @@
         parent.appendChild(code);
         return;
       }
-      if (token.startsWith('**') && token.endsWith('**') && token.length > 4) {
+      if (
+        (token.startsWith('$') && token.endsWith('$') && token.length > 2) ||
+        (token.startsWith('\\(') && token.endsWith('\\)')) ||
+        (token.startsWith('\\[') && token.endsWith('\\]'))
+      ) {
+        const math = document.createElement('span');
+        math.className = 'math-source';
+        math.textContent = token;
+        parent.appendChild(math);
+        return;
+      }
+      if ((token.startsWith('**') && token.endsWith('**') && token.length > 4) ||
+          (token.startsWith('__') && token.endsWith('__') && token.length > 4)) {
         const strong = document.createElement('strong');
         strong.textContent = token.slice(2, -2);
         parent.appendChild(strong);
+        return;
+      }
+      if (token.startsWith('~~') && token.endsWith('~~') && token.length > 4) {
+        const del = document.createElement('del');
+        del.textContent = token.slice(2, -2);
+        parent.appendChild(del);
+        return;
+      }
+      if ((token.startsWith('*') && token.endsWith('*') && token.length > 2) ||
+          (token.startsWith('_') && token.endsWith('_') && token.length > 2)) {
+        const em = document.createElement('em');
+        em.textContent = token.slice(1, -1);
+        parent.appendChild(em);
         return;
       }
       const linkMatch = token.match(/^\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)$/);
@@ -2614,6 +3188,14 @@
       }
       parent.appendChild(document.createTextNode(token));
     });
+  }
+
+  function splitTableRow(line) {
+    return String(line).trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((cell) => cell.trim());
+  }
+
+  function isTableSeparator(line) {
+    return /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?\s*$/.test(line);
   }
 
   function renderChatMarkdown(container, markdown) {
@@ -2644,6 +3226,24 @@
         continue;
       }
 
+      const mathOpen = line.match(/^\s*(\$\$|\\\[)\s*$/);
+      if (mathOpen) {
+        const closePattern = mathOpen[1] === '$$' ? /^\s*\$\$\s*$/ : /^\s*\\\]\s*$/;
+        const closeDelimiter = mathOpen[1] === '$$' ? '$$' : '\\]';
+        const mathLines = [];
+        index += 1;
+        while (index < lines.length && !closePattern.test(lines[index])) {
+          mathLines.push(lines[index]);
+          index += 1;
+        }
+        if (index < lines.length) index += 1;
+        const math = document.createElement('div');
+        math.className = 'math-display math-source';
+        math.textContent = mathOpen[1] + '\n' + mathLines.join('\n') + '\n' + closeDelimiter;
+        container.appendChild(math);
+        continue;
+      }
+
       const heading = line.match(/^(#{1,4})\s+(.+)$/);
       if (heading) {
         const level = Math.min(4, heading[1].length + 2);
@@ -2651,6 +3251,55 @@
         appendChatInline(element, heading[2]);
         container.appendChild(element);
         index += 1;
+        continue;
+      }
+
+      if (/^\s*>\s?/.test(line)) {
+        const blockquote = document.createElement('blockquote');
+        const quoteLines = [];
+        while (index < lines.length && /^\s*>\s?/.test(lines[index])) {
+          quoteLines.push(lines[index].replace(/^\s*>\s?/, ''));
+          index += 1;
+        }
+        quoteLines.forEach((quoteLine, lineIndex) => {
+          if (lineIndex) blockquote.appendChild(document.createElement('br'));
+          appendChatInline(blockquote, quoteLine);
+        });
+        container.appendChild(blockquote);
+        continue;
+      }
+
+      if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) {
+        container.appendChild(document.createElement('hr'));
+        index += 1;
+        continue;
+      }
+
+      if (line.includes('|') && index + 1 < lines.length && isTableSeparator(lines[index + 1])) {
+        const table = document.createElement('table');
+        const thead = document.createElement('thead');
+        const headRow = document.createElement('tr');
+        splitTableRow(line).forEach((cell) => {
+          const th = document.createElement('th');
+          appendChatInline(th, cell);
+          headRow.appendChild(th);
+        });
+        thead.appendChild(headRow);
+        table.appendChild(thead);
+        index += 2;
+        const tbody = document.createElement('tbody');
+        while (index < lines.length && lines[index].includes('|') && lines[index].trim()) {
+          const row = document.createElement('tr');
+          splitTableRow(lines[index]).forEach((cell) => {
+            const td = document.createElement('td');
+            appendChatInline(td, cell);
+            row.appendChild(td);
+          });
+          tbody.appendChild(row);
+          index += 1;
+        }
+        table.appendChild(tbody);
+        container.appendChild(table);
         continue;
       }
 
@@ -2684,8 +3333,13 @@
       while (index < lines.length && lines[index].trim() &&
              !/^```/.test(lines[index]) &&
              !/^#{1,4}\s+/.test(lines[index]) &&
+             !/^\s*>\s?/.test(lines[index]) &&
+             !/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(lines[index]) &&
+             !/^\s*\$\$\s*$/.test(lines[index]) &&
+             !/^\s*\\\[\s*$/.test(lines[index]) &&
              !/^\s*[-*]\s+/.test(lines[index]) &&
-             !/^\s*\d+\.\s+/.test(lines[index])) {
+             !/^\s*\d+\.\s+/.test(lines[index]) &&
+             !(lines[index].includes('|') && index + 1 < lines.length && isTableSeparator(lines[index + 1]))) {
         paragraph.appendChild(document.createElement('br'));
         appendChatInline(paragraph, lines[index]);
         index += 1;
@@ -2711,25 +3365,56 @@
     ref.meta.appendChild(button);
   }
 
+  function sendToXuan(url) {
+    if (!isSafeLink(url)) return;
+    closeChatDrawer(true);
+    if (window.location.hash !== '#xuan') window.location.hash = 'xuan';
+    showToast('已带到翾，选择打开方式');
+    window.setTimeout(() => {
+      const input = document.querySelector('#view-xuan .url-input');
+      const launcher = document.querySelector('#view-xuan .launcher');
+      if (input) {
+        input.value = url;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      if (launcher) launcher.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      if (input) input.focus({ preventScroll: true });
+    }, 90);
+  }
+
   function addChatSources(ref, citations) {
     if (!citations.length) return;
     const wrap = document.createElement('div');
     wrap.className = 'chat-sources';
-    citations.slice(0, 8).forEach((citation) => {
+    const head = document.createElement('div');
+    head.className = 'chat-sources-head';
+    const label = document.createElement('span');
+    label.textContent = '联网来源';
+    head.appendChild(label);
+    const hint = document.createElement('span');
+    hint.textContent = '选择网页，在翾中打开';
+    head.appendChild(hint);
+    wrap.appendChild(head);
+
+    citations.slice(0, 10).forEach((citation) => {
       if (!citation.url || !isSafeLink(citation.url)) return;
-      const link = document.createElement('a');
-      link.className = 'chat-source';
-      link.href = citation.url;
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
-      link.title = citation.title || citation.url;
-      link.appendChild(icon('i-link'));
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'chat-source';
+      button.title = '在翾中打开：' + (citation.title || citation.url);
+      button.appendChild(icon('i-link'));
       const title = document.createElement('span');
+      title.className = 'chat-source-title';
       title.textContent = citation.title || prettyHost(citation.url);
-      link.appendChild(title);
-      wrap.appendChild(link);
+      button.appendChild(title);
+      const host = document.createElement('span');
+      host.className = 'chat-source-host';
+      host.textContent = prettyHost(citation.url);
+      button.appendChild(host);
+      button.addEventListener('click', () => sendToXuan(citation.url));
+      wrap.appendChild(button);
     });
-    if (wrap.childElementCount) ref.row.insertBefore(wrap, ref.meta);
+    if (wrap.childElementCount > 1) ref.row.insertBefore(wrap, ref.meta);
   }
 
   function scrollChat() {
@@ -2764,18 +3449,21 @@
     if (!text) return;
 
     appendChatMessage('user', text);
-    chatHistory.push({ role: 'user', content: text });
+    addUserMessageToHistory(text);
     els.chatInput.value = '';
     updateChatControls();
 
-    const assistantRef = appendChatMessage('assistant', '正在思考…');
+    const assistantRef = appendChatMessage('assistant', thinkingEnabled ? '正在思考…' : '正在回答…');
     assistantRef.bubble.classList.add('is-thinking');
+    const reasoningRef = thinkingEnabled ? createReasoningBlock(assistantRef) : null;
+    if (reasoningRef) reasoningRef.body.textContent = '正在思考…';
     setChatBusy(true);
     setChatStatus(searchEnabled ? '正在准备联网…' : '正在思考…');
 
     const controller = new AbortController();
     chatController = controller;
     let fullContent = '';
+    let thinkingText = '';
     let citations = [];
     let lastPaint = 0;
     let queuedPaint = 0;
@@ -2803,7 +3491,7 @@
         messages: [
           {
             role: 'system',
-            content: chatSession.systemPrompt || '你是石径松轩的 AI 助手「颂」。回答使用用户的语言，简洁、准确、直接。涉及实时信息时，优先联网搜索并附上来源。'
+            content: chatSession.systemPrompt || defaultChatPrompt()
           },
           ...chatHistory.slice(-30)
         ],
@@ -2847,6 +3535,7 @@
           : '';
         if (content) {
           fullContent = content;
+          thinkingText = data.choices[0].message.reasoning_content || '';
           paint(true);
           const annotations = (data.choices[0].message && data.choices[0].message.annotations) || [];
           annotations.forEach((annotation) => collectCitation(citations, annotation));
@@ -2903,8 +3592,15 @@
               }
             }
 
-            if (delta.reasoning_content) {
+            if (typeof delta.reasoning_content === 'string' && delta.reasoning_content) {
+              thinkingText += delta.reasoning_content;
+              if (reasoningRef) {
+                reasoningRef.body.textContent = thinkingText;
+                reasoningRef.body.classList.add('is-streaming');
+                reasoningRef.block.hidden = false;
+              }
               if (!fullContent) setChatStatus('正在思考…');
+              scrollChat();
             }
             if (typeof delta.content === 'string' && delta.content) {
               const wasEmpty = !fullContent;
@@ -2937,12 +3633,20 @@
       paint(true);
       if (!fullContent.trim()) throw new Error('没有收到回答内容');
       assistantRef.bubble.classList.remove('is-thinking');
+      if (reasoningRef) {
+        if (thinkingText.trim()) {
+          reasoningRef.body.classList.remove('is-streaming');
+          renderRichText(reasoningRef.body, thinkingText);
+        } else {
+          reasoningRef.block.remove();
+        }
+      }
       assistantRef.copyText = fullContent;
-      renderChatMarkdown(assistantRef.bubble, fullContent);
+      renderRichText(assistantRef.bubble, fullContent);
       citations = dedupeCitations(citations);
       addChatSources(assistantRef, citations);
       addChatCopy(assistantRef);
-      chatHistory.push({ role: 'assistant', content: fullContent });
+      addAssistantMessageToHistory(fullContent, thinkingText, citations);
       setChatStatus('');
       scrollChat();
     } catch (error) {
@@ -2952,17 +3656,33 @@
       }
       if (error && error.name === 'AbortError') {
         if (fullContent.trim()) {
+          if (reasoningRef) {
+            if (thinkingText.trim()) {
+              reasoningRef.body.classList.remove('is-streaming');
+              renderRichText(reasoningRef.body, thinkingText);
+            } else {
+              reasoningRef.block.remove();
+            }
+          }
           assistantRef.copyText = fullContent;
-          renderChatMarkdown(assistantRef.bubble, fullContent);
+          renderRichText(assistantRef.bubble, fullContent);
           assistantRef.bubble.classList.remove('is-thinking');
+          citations = dedupeCitations(citations);
+          addChatSources(assistantRef, citations);
           addChatCopy(assistantRef);
-          chatHistory.push({ role: 'assistant', content: fullContent });
+          addAssistantMessageToHistory(fullContent, thinkingText, citations);
           scrollChat();
         } else {
           assistantRef.row.remove();
         }
         setChatStatus('已停止');
       } else {
+        if (reasoningRef && thinkingText.trim()) {
+          reasoningRef.body.classList.remove('is-streaming');
+          renderRichText(reasoningRef.body, thinkingText);
+        } else if (reasoningRef) {
+          reasoningRef.block.remove();
+        }
         assistantRef.row.classList.add('is-error');
         assistantRef.bubble.classList.remove('is-thinking');
         assistantRef.bubble.textContent = error && error.message ? error.message : '请求失败';
@@ -2993,15 +3713,48 @@
   els.loginPass.addEventListener('input', () => {
     if (!els.loginMessage.hidden) showLoginMessage('');
   });
-  els.keyInput.addEventListener('input', () => {
-    if (!els.keyMessage.hidden) showKeyMessage('');
+  [els.keyUser, els.keyPass, els.keyInput, els.keyPrompt].forEach((field) => {
+    field.addEventListener('input', () => {
+      if (!els.keyMessage.hidden) showKeyMessage('');
+    });
   });
 
-  els.manageAuth.addEventListener('click', openAccountManager);
-  els.chatAccount.addEventListener('click', openAccountManager);
-
-  els.accountDialog.addEventListener('click', (event) => {
-    if (event.target === els.accountDialog) els.accountDialog.close();
+  els.manageAuth.addEventListener('click', () => openChatDrawer('account'));
+  els.chatMenu.addEventListener('click', () => openChatDrawer('history'));
+  els.drawerClose.addEventListener('click', () => closeChatDrawer());
+  els.chatDrawerBackdrop.addEventListener('click', () => closeChatDrawer());
+  els.drawerTabHistory.addEventListener('click', () => setDrawerTab('history'));
+  els.drawerTabAccount.addEventListener('click', () => setDrawerTab('account'));
+  els.drawerNewChat.addEventListener('click', startNewChat);
+  els.drawerLogin.addEventListener('click', () => {
+    closeChatDrawer(true);
+    showLogin();
+    els.loginUser.focus();
+  });
+  els.conversationList.addEventListener('click', (event) => {
+    const open = event.target.closest('[data-conversation-id]');
+    if (open) {
+      openConversation(open.dataset.conversationId);
+      return;
+    }
+    const remove = event.target.closest('[data-delete-conversation]');
+    if (remove) deleteConversation(remove.dataset.deleteConversation);
+  });
+  els.historyClear.addEventListener('click', () => {
+    if (!historyClearArmed) {
+      historyClearArmed = true;
+      els.historyClear.textContent = '再点一次';
+      window.clearTimeout(historyClearTimer);
+      historyClearTimer = window.setTimeout(() => {
+        historyClearArmed = false;
+        els.historyClear.textContent = '清空';
+      }, 3200);
+      return;
+    }
+    historyClearArmed = false;
+    window.clearTimeout(historyClearTimer);
+    els.historyClear.textContent = '清空';
+    clearHistoryForOwner();
   });
 
   els.vaultList.addEventListener('click', (event) => {
@@ -3039,10 +3792,9 @@
     clearAllAccountData();
   });
 
-  els.accountDialog.addEventListener('close', () => {
-    vaultClearArmed = false;
-    window.clearTimeout(vaultClearTimer);
-    els.vaultClear.textContent = '清除全部';
+  els.chatDrawer.addEventListener('transitionend', () => {});
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !els.chatDrawer.hidden) closeChatDrawer();
   });
 
   els.chatForm.addEventListener('submit', (event) => {
@@ -3062,13 +3814,7 @@
       try { chatController.abort(); } catch (error) {}
     }
   });
-  els.chatNew.addEventListener('click', () => {
-    if (chatBusy) return;
-    resetChatMessages();
-    els.chatInput.value = '';
-    updateChatControls();
-    els.chatInput.focus();
-  });
+  els.chatNew.addEventListener('click', startNewChat);
   els.chatSearch.addEventListener('click', () => {
     if (chatBusy) return;
     searchEnabled = !searchEnabled;
@@ -3155,6 +3901,7 @@
   applyRoute();
   setCodecMode('encode');
   hideSiteMessage();
+  chatStore = loadChatStore();
   loadChatPrefs();
   updateChatToggleButtons();
   setAuthMode('account');

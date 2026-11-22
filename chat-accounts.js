@@ -8,7 +8,7 @@
  *   password: "your-password",
  *   apiKey: "sk-xxxxxxxxxxxxxxxx",
  *   model: "deepseek-flash",
- *   systemPrompt: "你是石径松轩的 AI 助手，回答简洁准确。"
+ *   systemPrompt: "你可以使用 Markdown 和 LaTeX 来组织回答。"
  * }
  *
  * 注意：这是纯前端页面，任何能打开网站的人都能读取这里的账号密码与 API Key。
@@ -20,6 +20,6 @@ window.SERLANE_ACCOUNTS = [
     password: "SerlingX8928",
     apiKey: "sk-84ba10717af745caa7679985175d1ebf",
     model: "deepseek-flash",
-    systemPrompt: "你是「颂」，石径松轩中的 AI 助手。回答使用与用户相同的语言，简洁、准确、直接；涉及实时信息时优先联网搜索并附上来源。"
+    systemPrompt: "你可以使用 Markdown 和 LaTeX 来组织回答。"
   }
 ];
