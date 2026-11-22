@@ -4749,3 +4749,12 @@ body[data-route="song"] .toast {
   top: calc(var(--header-h) + 74px);
   bottom: auto;
 }
+
+.launcher.is-handoff {
+  animation: handoff-pulse 1.5s ease;
+}
+
+@keyframes handoff-pulse {
+  0%, 100% { box-shadow: var(--shadow-md); }
+  18% { box-shadow: 0 0 0 4px rgba(93, 131, 80, 0.18), var(--shadow-md); }
+}

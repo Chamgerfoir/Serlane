@@ -3377,8 +3377,13 @@
         input.value = url;
         input.dispatchEvent(new Event('input', { bubbles: true }));
       }
-      if (launcher) launcher.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      if (input) input.focus({ preventScroll: true });
+      if (launcher) {
+        launcher.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        launcher.classList.remove('is-handoff');
+        void launcher.offsetWidth;
+        launcher.classList.add('is-handoff');
+        window.setTimeout(() => launcher.classList.remove('is-handoff'), 1600);
+      }
     }, 90);
   }
 
