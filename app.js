@@ -1,16 +1,28 @@
 /* 石径松轩 · Serlane
-   Vanilla JS. PeerJS is loaded only when a transfer room is used. */
+   Vanilla JS. PeerJS is loaded only for transfer; DeepSeek is called from the browser. */
 
 (function () {
   'use strict';
 
   const STORAGE_KEY = 'dukou.state.v1';
+  const CHAT_SESSION_KEY = 'serlane.chat.session.v1';
+  const CHAT_VAULT_KEY = 'serlane.chat.vault.v1';
+  const CHAT_PREFS_KEY = 'serlane.chat.prefs.v1';
   const MAX_SITES = 200;
   const CHUNK_SIZE = 64 * 1024;
   const BUFFER_LIMIT = 4 * 1024 * 1024;
   const MAX_ZIP_BYTES = 1024 * 1024 * 1024;
-  const MAX_TEXT_LENGTH = 120000;
   const PEER_PREFIX = 'serlane-';
+  const DEEPSEEK_ENDPOINT = 'https://api.deepseek.com/chat/completions';
+  const ROUTES = ['home', 'shi', 'jing', 'song', 'xuan'];
+  const PAGE_TITLES = {
+    home: '石径松轩 · Serlane',
+    shi: '识 · 石径松轩',
+    jing: '静 · 石径松轩',
+    song: '颂 · 石径松轩',
+    xuan: '翾 · 石径松轩'
+  };
+
   const PEER_OPTIONS = {
     debug: 0,
     config: {
@@ -22,17 +34,20 @@
   };
 
   const els = {
-    launcher: document.getElementById('launcher'),
-    urlInput: document.getElementById('url-input'),
-    urlClear: document.getElementById('url-clear'),
-    urlMessage: document.getElementById('url-message'),
-    newtabLink: document.getElementById('newtab-link'),
+    views: document.querySelectorAll('[data-view]'),
+    pageLinks: document.querySelectorAll('[data-page-link]'),
+    launchers: document.querySelectorAll('[data-launcher]'),
 
     addSite: document.getElementById('add-site'),
     emptyAdd: document.getElementById('empty-add'),
     emptyState: document.getElementById('empty-state'),
     siteGrid: document.getElementById('site-grid'),
     siteCount: document.getElementById('site-count'),
+    xuanSiteGrid: document.getElementById('xuan-site-grid'),
+    xuanSiteCount: document.getElementById('xuan-site-count'),
+    xuanAddSite: document.getElementById('xuan-add-site'),
+    xuanEmptyAdd: document.getElementById('xuan-empty-add'),
+    xuanEmptyState: document.getElementById('xuan-empty-state'),
     siteCardTemplate: document.getElementById('site-card-template'),
     addCardTemplate: document.getElementById('add-card-template'),
 
@@ -56,13 +71,16 @@
     transferIntro: document.getElementById('transfer-intro'),
     transferRoom: document.getElementById('transfer-room'),
     createRoom: document.getElementById('create-room'),
+    joinForm: document.getElementById('join-form'),
+    joinCode: document.getElementById('join-code'),
+    joinMessage: document.getElementById('join-message'),
     roomStatusDot: document.getElementById('room-status-dot'),
     roomStatusText: document.getElementById('room-status-text'),
     retryRoom: document.getElementById('retry-room'),
     leaveRoom: document.getElementById('leave-room'),
-    shareBox: document.getElementById('share-box'),
-    shareLink: document.getElementById('share-link'),
-    copyShare: document.getElementById('copy-share'),
+    inviteBox: document.getElementById('invite-box'),
+    inviteCode: document.getElementById('invite-code'),
+    copyInvite: document.getElementById('copy-invite'),
     roomWorkspace: document.getElementById('room-workspace'),
     roomMessage: document.getElementById('transfer-message'),
 
@@ -104,6 +122,40 @@
     codecCopy: document.getElementById('codec-copy'),
     codecClear: document.getElementById('codec-clear'),
 
+    loginPanel: document.getElementById('login-panel'),
+    loginForm: document.getElementById('login-form'),
+    loginUser: document.getElementById('login-user'),
+    loginPass: document.getElementById('login-pass'),
+    loginMessage: document.getElementById('login-message'),
+    loginSubmit: document.getElementById('login-submit'),
+    authModeAccount: document.getElementById('auth-mode-account'),
+    authModeKey: document.getElementById('auth-mode-key'),
+    authAccountPanel: document.getElementById('auth-account-panel'),
+    authKeyPanel: document.getElementById('auth-key-panel'),
+    keyForm: document.getElementById('key-form'),
+    keyInput: document.getElementById('key-input'),
+    keyMessage: document.getElementById('key-message'),
+    keySubmit: document.getElementById('key-submit'),
+    manageAuth: document.getElementById('manage-auth'),
+    accountDialog: document.getElementById('account-dialog'),
+    vaultList: document.getElementById('vault-list'),
+    vaultClear: document.getElementById('vault-clear'),
+    vaultLogout: document.getElementById('vault-logout'),
+    chatApp: document.getElementById('chat-app'),
+    chatUser: document.getElementById('chat-user'),
+    chatModel: document.getElementById('chat-model'),
+    chatSearch: document.getElementById('chat-search'),
+    chatThink: document.getElementById('chat-think'),
+    chatNew: document.getElementById('chat-new'),
+    chatAccount: document.getElementById('chat-account'),
+    chatMessages: document.getElementById('chat-messages'),
+    chatWelcome: document.getElementById('chat-welcome'),
+    chatStatus: document.getElementById('chat-status'),
+    chatForm: document.getElementById('chat-form'),
+    chatInput: document.getElementById('chat-input'),
+    chatSend: document.getElementById('chat-send'),
+    chatStop: document.getElementById('chat-stop'),
+
     toast: document.getElementById('toast'),
     toastText: document.getElementById('toast-text'),
     toastAction: document.getElementById('toast-action')
@@ -132,6 +184,15 @@
   let receivedFiles = [];
   let lastProgressPaint = 0;
 
+  let chatSession = loadChatSession();
+  let chatHistory = [];
+  let chatBusy = false;
+  let chatController = null;
+  let searchEnabled = true;
+  let thinkingEnabled = false;
+  let vaultClearArmed = false;
+  let vaultClearTimer = 0;
+
   const CRC_TABLE = (() => {
     const table = new Uint32Array(256);
     for (let n = 0; n < 256; n += 1) {
@@ -145,7 +206,7 @@
   })();
 
   /* -------------------------------------------------------------
-     Small helpers
+     Generic helpers
   ------------------------------------------------------------- */
 
   function icon(name) {
@@ -169,13 +230,13 @@
     const alphabet = 'abcdefghjkmnpqrstuvwxyz23456789';
     let suffix = '';
     if (window.crypto && typeof window.crypto.getRandomValues === 'function') {
-      const values = new Uint8Array(7);
+      const values = new Uint8Array(8);
       window.crypto.getRandomValues(values);
       for (let index = 0; index < values.length; index += 1) {
         suffix += alphabet[values[index] % alphabet.length];
       }
     } else {
-      for (let index = 0; index < 7; index += 1) {
+      for (let index = 0; index < 8; index += 1) {
         suffix += alphabet[Math.floor(Math.random() * alphabet.length)];
       }
     }
@@ -227,8 +288,25 @@
     return receivedFiles.reduce((sum, file) => sum + file.size, 0);
   }
 
+  function isSafeLink(value) {
+    try {
+      const parsed = new URL(value);
+      return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+    } catch (error) {
+      return false;
+    }
+  }
+
+  function prettyHost(value) {
+    try {
+      return new URL(value).hostname.replace(/^www\./i, '');
+    } catch (error) {
+      return '来源';
+    }
+  }
+
   /* -------------------------------------------------------------
-     Bookmarks: local persistence
+     Bookmarks
   ------------------------------------------------------------- */
 
   function loadState() {
@@ -289,10 +367,6 @@
     ).slice(0, 36).join('');
   }
 
-  /* -------------------------------------------------------------
-     URLs
-  ------------------------------------------------------------- */
-
   function normalizeUrl(raw) {
     const value = typeof raw === 'string' ? raw.trim() : '';
     if (!value) throw new Error('请输入一个网址');
@@ -321,7 +395,6 @@
       throw new Error('仅支持 HTTP 与 HTTPS 网址');
     }
     if (!parsed.hostname) throw new Error('网址格式不正确');
-
     const host = parsed.hostname;
     const isIp = /^\d{1,3}(?:\.\d{1,3}){3}$/.test(host) || host.startsWith('[');
     if (!isIp && host !== 'localhost' && host.indexOf('.') === -1) {
@@ -352,60 +425,65 @@
     return /[a-z]/i.test(first) ? first.toUpperCase() : first;
   }
 
-  /* -------------------------------------------------------------
-     Bookmark rendering
-  ------------------------------------------------------------- */
+  function bookmarkTargets() {
+    return [
+      { grid: els.siteGrid, empty: els.emptyState, count: els.siteCount },
+      { grid: els.xuanSiteGrid, empty: els.xuanEmptyState, count: els.xuanSiteCount }
+    ];
+  }
 
   function renderSites() {
     const hasSites = state.sites.length > 0;
-    els.siteCount.textContent = state.sites.length + ' 个站点';
-    els.emptyState.hidden = hasSites;
-    els.siteGrid.hidden = !hasSites;
+    bookmarkTargets().forEach((target) => {
+      target.count.textContent = state.sites.length + ' 个站点';
+      target.empty.hidden = hasSites;
+      target.grid.hidden = !hasSites;
 
-    if (!hasSites) {
-      els.siteGrid.replaceChildren();
-      return;
-    }
+      if (!hasSites) {
+        target.grid.replaceChildren();
+        return;
+      }
 
-    const fragment = document.createDocumentFragment();
-    state.sites.forEach((site, index) => {
-      const card = els.siteCardTemplate.content.firstElementChild.cloneNode(true);
-      card.dataset.siteId = site.id;
-      card.style.setProperty('--delay', Math.min(index, 8) * 30 + 'ms');
+      const fragment = document.createDocumentFragment();
+      state.sites.forEach((site, index) => {
+        const card = els.siteCardTemplate.content.firstElementChild.cloneNode(true);
+        card.dataset.siteId = site.id;
+        card.style.setProperty('--delay', Math.min(index, 8) * 30 + 'ms');
 
-      const mark = card.querySelector('.site-mark');
-      const name = card.querySelector('.site-name');
-      const host = card.querySelector('.site-host');
-      const edit = card.querySelector('[data-action="edit"]');
-      const tab = card.querySelector('[data-mode="tab"]');
-      const frameButton = card.querySelector('[data-mode="frame"]');
-      const redirectButton = card.querySelector('[data-mode="redirect"]');
+        const mark = card.querySelector('.site-mark');
+        const name = card.querySelector('.site-name');
+        const host = card.querySelector('.site-host');
+        const edit = card.querySelector('[data-action="edit"]');
+        const tab = card.querySelector('[data-mode="tab"]');
+        const frameButton = card.querySelector('[data-mode="frame"]');
+        const redirectButton = card.querySelector('[data-mode="redirect"]');
 
-      mark.textContent = monogram(site.title);
-      name.textContent = site.title;
-      name.title = site.title;
-      host.textContent = hostForUrl(site.url);
-      host.title = site.url;
-      edit.setAttribute('aria-label', '编辑 ' + site.title);
-      tab.href = site.url;
-      tab.setAttribute('aria-label', '在新标签页打开 ' + site.title);
-      frameButton.setAttribute('aria-label', '内嵌浏览 ' + site.title);
-      redirectButton.setAttribute('aria-label', '在当前页打开 ' + site.title);
-      card.querySelector('.site-actions').setAttribute('aria-label', site.title + ' 的打开方式');
+        mark.textContent = monogram(site.title);
+        name.textContent = site.title;
+        name.title = site.title;
+        host.textContent = hostForUrl(site.url);
+        host.title = site.url;
+        edit.setAttribute('aria-label', '编辑 ' + site.title);
+        tab.href = site.url;
+        tab.setAttribute('aria-label', '在新标签页打开 ' + site.title);
+        frameButton.setAttribute('aria-label', '内嵌浏览 ' + site.title);
+        redirectButton.setAttribute('aria-label', '在当前页打开 ' + site.title);
+        card.querySelector('.site-actions').setAttribute('aria-label', site.title + ' 的打开方式');
 
-      fragment.appendChild(card);
+        fragment.appendChild(card);
+      });
+
+      const addCard = els.addCardTemplate.content.firstElementChild.cloneNode(true);
+      fragment.appendChild(addCard);
+      target.grid.replaceChildren(fragment);
     });
-
-    const addCard = els.addCardTemplate.content.firstElementChild.cloneNode(true);
-    fragment.appendChild(addCard);
-    els.siteGrid.replaceChildren(fragment);
   }
 
   function findSite(id) {
     return state.sites.find((site) => site.id === id);
   }
 
-  els.siteGrid.addEventListener('click', (event) => {
+  function handleSiteGridClick(event) {
     const add = event.target.closest('[data-action="add"]');
     if (add) {
       openSiteDialog(null, add);
@@ -426,16 +504,12 @@
     const site = card ? findSite(card.dataset.siteId) : null;
     if (!site) return;
 
-    if (modeButton.dataset.mode === 'frame') {
-      openFrame(site.url, site.title);
-    } else if (modeButton.dataset.mode === 'redirect') {
-      window.location.assign(site.url);
-    }
-  });
+    if (modeButton.dataset.mode === 'frame') openFrame(site.url, site.title);
+    if (modeButton.dataset.mode === 'redirect') window.location.assign(site.url);
+  }
 
-  /* -------------------------------------------------------------
-     Add / edit / delete
-  ------------------------------------------------------------- */
+  els.siteGrid.addEventListener('click', handleSiteGridClick);
+  els.xuanSiteGrid.addEventListener('click', handleSiteGridClick);
 
   function openSiteDialog(site, opener) {
     editingId = site ? site.id : null;
@@ -481,9 +555,7 @@
       return;
     }
 
-    const duplicate = state.sites.some((site) => {
-      return site.id !== editingId && site.url === parsed.href;
-    });
+    const duplicate = state.sites.some((site) => site.id !== editingId && site.url === parsed.href);
     if (duplicate) {
       showSiteMessage('这个网址已经收藏过了');
       els.siteUrl.focus();
@@ -596,118 +668,139 @@
     });
   }
 
-  [els.addSite, els.emptyAdd].forEach((button) => {
+  [els.addSite, els.emptyAdd, els.xuanAddSite, els.xuanEmptyAdd].forEach((button) => {
     button.addEventListener('click', () => openSiteDialog(null, button));
   });
 
   /* -------------------------------------------------------------
-     URL launcher
+     URL launchers (home and 翾)
   ------------------------------------------------------------- */
 
-  function updateNewTabLink() {
-    const value = els.urlInput.value.trim();
-    els.urlClear.hidden = els.urlInput.value.length === 0;
-    if (!value) {
-      els.newtabLink.href = '#';
-      els.newtabLink.setAttribute('aria-disabled', 'true');
-      return;
+  function setupLauncher(form) {
+    const input = form.querySelector('.url-input');
+    const clear = form.querySelector('.url-clear');
+    const message = form.querySelector('.form-message');
+    const link = form.querySelector('.newtab-link');
+    const modeButtons = form.querySelectorAll('button[data-mode]');
+
+    function setMessage(text, error) {
+      message.textContent = text || '';
+      message.hidden = !text;
+      message.classList.toggle('is-error', Boolean(error));
+      form.classList.toggle('is-invalid', Boolean(error));
+      if (error) input.setAttribute('aria-invalid', 'true');
+      else input.removeAttribute('aria-invalid');
     }
-    try {
-      const parsed = normalizeUrl(value);
-      els.newtabLink.href = parsed.href;
-      els.newtabLink.removeAttribute('aria-disabled');
-    } catch (error) {
-      els.newtabLink.href = '#';
-      els.newtabLink.setAttribute('aria-disabled', 'true');
-    }
-  }
 
-  function showUrlError(message) {
-    els.urlMessage.textContent = message;
-    els.urlMessage.hidden = false;
-    els.launcher.classList.add('is-invalid');
-    els.urlInput.setAttribute('aria-invalid', 'true');
-    els.urlInput.focus();
-  }
-
-  function hideUrlError() {
-    els.urlMessage.textContent = '';
-    els.urlMessage.hidden = true;
-    els.launcher.classList.remove('is-invalid');
-    els.urlInput.removeAttribute('aria-invalid');
-  }
-
-  function parsedInputOrError() {
-    try {
-      const parsed = normalizeUrl(els.urlInput.value);
-      hideUrlError();
-      return parsed;
-    } catch (error) {
-      showUrlError(error.message);
-      return null;
-    }
-  }
-
-  function submitUrl() {
-    updateNewTabLink();
-    if (els.newtabLink.getAttribute('aria-disabled') === 'true') {
-      try {
-        normalizeUrl(els.urlInput.value);
-      } catch (error) {
-        showUrlError(error.message);
+    function update() {
+      clear.hidden = input.value.length === 0;
+      if (!input.value.trim()) {
+        link.href = '#';
+        link.setAttribute('aria-disabled', 'true');
+        return;
       }
-      return;
+      try {
+        const parsed = normalizeUrl(input.value);
+        link.href = parsed.href;
+        link.removeAttribute('aria-disabled');
+      } catch (error) {
+        link.href = '#';
+        link.setAttribute('aria-disabled', 'true');
+      }
     }
-    hideUrlError();
-    els.newtabLink.click();
-  }
 
-  els.newtabLink.addEventListener('click', (event) => {
-    try {
-      const parsed = normalizeUrl(els.urlInput.value);
-      els.newtabLink.href = parsed.href;
-      hideUrlError();
-    } catch (error) {
-      event.preventDefault();
-      showUrlError(error.message);
+    function parseOrMessage() {
+      try {
+        const parsed = normalizeUrl(input.value);
+        setMessage('');
+        return parsed;
+      } catch (error) {
+        setMessage(error.message, true);
+        input.focus();
+        return null;
+      }
     }
-  });
 
-  els.launcher.addEventListener('submit', (event) => {
-    event.preventDefault();
-    submitUrl();
-  });
-
-  els.urlInput.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      submitUrl();
-    }
-  });
-
-  els.urlInput.addEventListener('input', () => {
-    updateNewTabLink();
-    if (!els.urlMessage.hidden) hideUrlError();
-  });
-
-  els.urlClear.addEventListener('click', () => {
-    els.urlInput.value = '';
-    updateNewTabLink();
-    hideUrlError();
-    els.urlInput.focus();
-  });
-
-  document.querySelectorAll('.mode-button[data-mode]').forEach((button) => {
-    button.addEventListener('click', () => {
-      const parsed = parsedInputOrError();
+    function submit() {
+      update();
+      const parsed = parseOrMessage();
       if (!parsed) return;
-      if (button.dataset.mode === 'frame') {
-        openFrame(parsed.href, titleFromUrl(parsed));
-      } else if (button.dataset.mode === 'redirect') {
-        window.location.assign(parsed.href);
+      link.href = parsed.href;
+      link.click();
+    }
+
+    input.addEventListener('input', () => {
+      update();
+      if (!message.hidden) setMessage('');
+    });
+
+    input.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        submit();
       }
     });
-  });
+
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      submit();
+    });
+
+    link.addEventListener('click', (event) => {
+      const parsed = parseOrMessage();
+      if (!parsed) {
+        event.preventDefault();
+        return;
+      }
+      link.href = parsed.href;
+    });
+
+    modeButtons.forEach((button) => {
+      button.addEventListener('click', () => {
+        const parsed = parseOrMessage();
+        if (!parsed) return;
+        if (button.dataset.mode === 'frame') openFrame(parsed.href, titleFromUrl(parsed));
+        if (button.dataset.mode === 'redirect') window.location.assign(parsed.href);
+      });
+    });
+
+    clear.addEventListener('click', () => {
+      input.value = '';
+      update();
+      setMessage('');
+      input.focus();
+    });
+
+    update();
+  }
+
+  els.launchers.forEach(setupLauncher);
+
+  /* -------------------------------------------------------------
+     Router
+  ------------------------------------------------------------- */
+
+  function routeFromHash() {
+    const name = window.location.hash.replace(/^#/, '');
+    return ROUTES.includes(name) ? name : 'home';
+  }
+
+  function applyRoute() {
+    const route = routeFromHash();
+    els.views.forEach((view) => {
+      const active = view.dataset.view === route;
+      view.hidden = !active;
+      view.classList.toggle('is-active', active);
+    });
+    els.pageLinks.forEach((link) => {
+      if (link.dataset.pageLink === route) link.setAttribute('aria-current', 'page');
+      else link.removeAttribute('aria-current');
+    });
+    document.title = PAGE_TITLES[route] || PAGE_TITLES.home;
+    window.scrollTo({ top: 0, behavior: 'auto' });
+  }
+
+  window.addEventListener('hashchange', applyRoute);
 
   /* -------------------------------------------------------------
      Inline browser
@@ -742,10 +835,8 @@
   });
 
   els.frameClose.addEventListener('click', closeFrame);
-
   els.frameRedirect.addEventListener('click', () => {
-    if (!currentFrameUrl) return;
-    window.location.assign(currentFrameUrl);
+    if (currentFrameUrl) window.location.assign(currentFrameUrl);
   });
 
   /* -------------------------------------------------------------
@@ -786,8 +877,7 @@
 
     try {
       if (codecMode === 'encode') {
-        const bytes = new TextEncoder().encode(value);
-        els.codecOutput.value = bytesToBase64(bytes);
+        els.codecOutput.value = bytesToBase64(new TextEncoder().encode(value));
       } else {
         els.codecOutput.value = decodeBase64Text(value);
       }
@@ -823,18 +913,14 @@
     const unpadded = clean.replace(/=+$/, '');
     if (unpadded.length % 4 === 1) throw new Error('Base64 格式不正确');
     const padded = unpadded + '='.repeat((4 - (unpadded.length % 4)) % 4);
-
     let binary;
     try {
       binary = atob(padded);
     } catch (error) {
       throw new Error('Base64 格式不正确');
     }
-
     const bytes = new Uint8Array(binary.length);
-    for (let index = 0; index < binary.length; index += 1) {
-      bytes[index] = binary.charCodeAt(index);
-    }
+    for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
     try {
       return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
     } catch (error) {
@@ -845,7 +931,6 @@
   els.encodeTab.addEventListener('click', () => setCodecMode('encode'));
   els.decodeTab.addEventListener('click', () => setCodecMode('decode'));
   els.codecInput.addEventListener('input', scheduleCodec);
-
   els.codecClear.addEventListener('click', () => {
     window.clearTimeout(codecTimer);
     els.codecInput.value = '';
@@ -856,7 +941,6 @@
     setCodecStatus('');
     els.codecInput.focus();
   });
-
   els.codecCopy.addEventListener('click', () => {
     if (!els.codecOutput.value) {
       showToast('没有可复制的结果');
@@ -868,7 +952,7 @@
   });
 
   /* -------------------------------------------------------------
-     Transfer: PeerJS loading and session state
+     Transfer: shared helpers
   ------------------------------------------------------------- */
 
   function connectionOnline() {
@@ -886,6 +970,12 @@
   function showRoomMessage(message) {
     els.roomMessage.textContent = message || '';
     els.roomMessage.hidden = !message;
+  }
+
+  function showJoinMessage(message) {
+    els.joinMessage.textContent = message || '';
+    els.joinMessage.hidden = !message;
+    els.joinMessage.classList.toggle('is-error', Boolean(message));
   }
 
   function showTransferRoom() {
@@ -909,18 +999,15 @@
   function loadPeerJS() {
     if (window.Peer) return Promise.resolve(window.Peer);
     if (peerScriptPromise) return peerScriptPromise;
-    if (!window.RTCPeerConnection) {
-      return Promise.reject(new Error('当前浏览器不支持 WebRTC'));
-    }
+    if (!window.RTCPeerConnection) return Promise.reject(new Error('当前浏览器不支持 WebRTC'));
 
     peerScriptPromise = new Promise((resolve, reject) => {
       const script = document.createElement('script');
       script.src = 'peerjs.min.js';
       script.async = true;
       script.onload = () => {
-        if (window.Peer) {
-          resolve(window.Peer);
-        } else {
+        if (window.Peer) resolve(window.Peer);
+        else {
           peerScriptPromise = null;
           reject(new Error('P2P 组件加载失败'));
         }
@@ -931,14 +1018,11 @@
       };
       document.head.appendChild(script);
     });
-
     return peerScriptPromise;
   }
 
   function peerErrorObject(event) {
-    const error = new Error(
-      (event && event.message) || (event && event.type) || 'P2P 连接失败'
-    );
+    const error = new Error((event && event.message) || (event && event.type) || 'P2P 连接失败');
     error.type = event && event.type;
     return error;
   }
@@ -998,9 +1082,7 @@
     if (!role) return;
     const type = event && event.type;
     if (type === 'peer-unavailable') {
-      if (role === 'guest' && !connected) {
-        failRoom('没有找到这个传输房间，链接可能已经失效');
-      }
+      if (role === 'guest' && !connected) failRoom('没有找到这个房间，邀请码可能已经失效');
       return;
     }
     if (type === 'browser-incompatible') {
@@ -1015,7 +1097,7 @@
   function failRoom(message) {
     setRoomStatus('error', '连接失败');
     els.retryRoom.hidden = false;
-    els.shareBox.hidden = true;
+    els.inviteBox.hidden = true;
     showRoomMessage(message);
     connected = false;
     updateRoomControls();
@@ -1037,8 +1119,8 @@
     if (role === 'host' && peer && !peer.destroyed) {
       setRoomStatus('waiting', '等待另一台设备');
       els.retryRoom.hidden = true;
+      els.inviteBox.hidden = false;
       els.leaveRoom.disabled = false;
-      els.shareBox.hidden = !hostId;
     } else {
       setRoomStatus('error', '连接失败');
       els.retryRoom.hidden = false;
@@ -1048,20 +1130,17 @@
   }
 
   function onConnectionOpen(token) {
-    if (token !== transferSession) return;
-    if (connected) return;
+    if (token !== transferSession || connected) return;
     connected = true;
     window.clearTimeout(connectionTimer);
     setRoomStatus('online', '已连接');
     showRoomMessage('');
     els.retryRoom.hidden = true;
-    els.shareBox.hidden = true;
+    els.inviteBox.hidden = true;
     els.messageEmpty.textContent = '已连接，发一段文字试试。';
     els.messageEmpty.hidden = els.messages.querySelector('.message') !== null;
     updateRoomControls();
-    try {
-      conn.send({ type: 'hello', version: 1 });
-    } catch (error) {}
+    try { conn.send({ type: 'hello', version: 1 }); } catch (error) {}
     showToast('已连接');
   }
 
@@ -1069,31 +1148,24 @@
     conn = candidate;
     window.clearTimeout(connectionTimer);
     connectionTimer = window.setTimeout(() => {
-      if (conn === candidate && !connected) {
-        failConnection('连接超时，请重试');
-      }
+      if (conn === candidate && !connected) failConnection('连接超时，请重试');
     }, 22000);
 
     candidate.on('open', () => {
       if (conn !== candidate) return;
       onConnectionOpen(token);
     });
-
     candidate.on('data', (data) => {
       if (conn !== candidate) return;
       handlePacket(data);
     });
-
     candidate.on('close', () => {
       if (conn !== candidate) return;
       onConnectionClosed();
     });
-
     candidate.on('error', () => {
       if (conn !== candidate) return;
-      if (!connected) {
-        failConnection('连接失败，请重试');
-      }
+      if (!connected) failConnection('连接失败，请重试');
     });
 
     if (candidate.open) onConnectionOpen(token);
@@ -1112,13 +1184,13 @@
     if (role === 'host' && peer && !peer.destroyed) {
       setRoomStatus('waiting', '等待重新连接');
       els.retryRoom.hidden = true;
-      els.shareBox.hidden = !hostId;
+      els.inviteBox.hidden = false;
     } else {
       setRoomStatus('error', '连接已断开');
       els.retryRoom.hidden = false;
     }
     if (wasConnected) {
-      showRoomMessage('连接已断开，可以重新打开分享链接或重新连接。');
+      showRoomMessage('连接已断开，可以重新输入邀请码或重新连接。');
       showToast('连接已断开');
     }
     if (selectedFiles.length) renderPendingFiles();
@@ -1129,7 +1201,6 @@
       try { incoming.close(); } catch (error) {}
       return;
     }
-
     if (conn && conn.open) {
       incoming.on('open', () => {
         try { incoming.send({ type: 'notice', message: '房间已有设备连接' }); } catch (error) {}
@@ -1139,13 +1210,23 @@
       });
       return;
     }
-
     if (conn) {
       const previous = conn;
       conn = null;
       try { previous.close(); } catch (error) {}
     }
     bindConnection(incoming, token);
+  }
+
+  function inviteFromPeerId(id) {
+    return String(id || '').replace(PEER_PREFIX, '').toUpperCase();
+  }
+
+  function normalizeInviteCode(value) {
+    let code = String(value || '').trim().toLowerCase().replace(/\s+/g, '');
+    if (code.startsWith(PEER_PREFIX)) code = code.slice(PEER_PREFIX.length);
+    if (!/^[a-z0-9]{4,32}$/.test(code)) return '';
+    return PEER_PREFIX + code;
   }
 
   async function startHostRoom() {
@@ -1155,11 +1236,12 @@
     guestTarget = '';
     connected = false;
     closeConnectionOnly();
+    showJoinMessage('');
+    showRoomMessage('');
     showTransferRoom();
-    els.shareBox.hidden = true;
+    els.inviteBox.hidden = true;
     els.retryRoom.hidden = true;
     setRoomStatus('waiting', '正在准备房间…');
-    showRoomMessage('');
     updateRoomControls();
 
     try {
@@ -1172,8 +1254,8 @@
       }
       peer = newPeer;
       hostId = newPeer.id;
-      els.shareLink.value = buildShareUrl(newPeer.id);
-      els.shareBox.hidden = false;
+      els.inviteCode.textContent = inviteFromPeerId(newPeer.id);
+      els.inviteBox.hidden = false;
       setRoomStatus('waiting', '等待另一台设备');
       newPeer.on('connection', (incoming) => handleIncomingConnection(incoming, token));
     } catch (error) {
@@ -1192,16 +1274,13 @@
     hostId = target;
     connected = false;
     closeConnectionOnly();
+    showJoinMessage('');
+    showRoomMessage('');
     showTransferRoom();
-    els.shareBox.hidden = true;
+    els.inviteBox.hidden = true;
     els.retryRoom.hidden = true;
     setRoomStatus('waiting', '正在寻找房间…');
-    showRoomMessage('');
     updateRoomControls();
-    window.setTimeout(() => {
-      const section = document.getElementById('transfer');
-      if (section) section.scrollIntoView({ block: 'start' });
-    }, 80);
 
     try {
       await loadPeerJS();
@@ -1212,16 +1291,13 @@
         return;
       }
       peer = guestPeer;
-      const connection = guestPeer.connect(target, {
-        reliable: true,
-        serialization: 'binary'
-      });
+      const connection = guestPeer.connect(target, { reliable: true, serialization: 'binary' });
       if (!connection) throw new Error('无法发起连接');
       bindConnection(connection, token);
     } catch (error) {
       if (token !== transferSession) return;
       setRoomStatus('error', '连接失败');
-      showRoomMessage(error && error.message ? error.message : '找不到这个传输房间');
+      showRoomMessage(error && error.message ? error.message : '找不到这个房间');
       els.retryRoom.hidden = false;
       updateRoomControls();
     }
@@ -1261,11 +1337,8 @@
     connected = false;
     showRoomMessage('');
     els.retryRoom.hidden = true;
-    if (retryAsGuest) {
-      startGuestRoom(target);
-    } else {
-      startHostRoom();
-    }
+    if (retryAsGuest) startGuestRoom(target);
+    else startHostRoom();
   }
 
   function leaveRoom() {
@@ -1275,30 +1348,10 @@
     guestTarget = '';
     connected = false;
     resetTransferContent();
-    if (location.hash.startsWith('#p2p=')) {
-      history.replaceState(null, '', location.pathname + location.search);
-    }
   }
-
-  function buildShareUrl(id) {
-    const base = location.origin && location.origin !== 'null'
-      ? location.origin + location.pathname
-      : location.href.split('#')[0];
-    return base + location.search + '#p2p=' + encodeURIComponent(id);
-  }
-
-  function roomTargetFromHash() {
-    const match = location.hash.match(/^#p2p=([A-Za-z0-9_-]{3,80})$/);
-    return match ? match[1] : '';
-  }
-
-  /* -------------------------------------------------------------
-     Transfer: interface state
-  ------------------------------------------------------------- */
 
   function resetTransferContent() {
-    const messages = Array.from(els.messages.querySelectorAll('.message'));
-    messages.forEach((message) => message.remove());
+    Array.from(els.messages.querySelectorAll('.message')).forEach((message) => message.remove());
     els.messageEmpty.hidden = false;
     els.messageEmpty.textContent = '连接后，发一段文字试试。';
     els.textInput.value = '';
@@ -1320,9 +1373,11 @@
     els.fileProgressBar.style.width = '0%';
     els.fileProgressPercent.textContent = '0%';
 
-    els.shareLink.value = '';
-    els.shareBox.hidden = true;
+    els.inviteCode.textContent = '—';
+    els.inviteBox.hidden = true;
     els.retryRoom.hidden = true;
+    els.joinCode.value = '';
+    showJoinMessage('');
     showRoomMessage('');
     setRoomStatus('', '正在准备…');
     els.transferRoom.hidden = true;
@@ -1330,10 +1385,13 @@
     updateRoomControls();
   }
 
+  /* -------------------------------------------------------------
+     Transfer: text
+  ------------------------------------------------------------- */
+
   function addMessage(text, direction) {
     const message = document.createElement('div');
     message.className = 'message ' + (direction === 'out' ? 'is-out' : 'is-in');
-
     const bubble = document.createElement('div');
     bubble.className = 'message-bubble';
     bubble.textContent = text;
@@ -1372,10 +1430,6 @@
     }
     const text = els.textInput.value.trim();
     if (!text) return;
-    if (text.length > MAX_TEXT_LENGTH) {
-      showToast('文字太长了，请分成几段发送');
-      return;
-    }
     try {
       conn.send({ type: 'text', id: randomId(), text });
       addMessage(text, 'out');
@@ -1398,16 +1452,29 @@
     sendTextMessage();
   });
 
-  els.copyShare.addEventListener('click', () => {
-    if (!els.shareLink.value) return;
-    copyToClipboard(els.shareLink.value)
-      .then(() => showToast('链接已复制'))
+  els.copyInvite.addEventListener('click', () => {
+    const code = els.inviteCode.textContent.trim();
+    if (!code || code === '—') return;
+    copyToClipboard(code)
+      .then(() => showToast('邀请码已复制'))
       .catch(() => showToast('复制失败，请手动选择'));
   });
 
   els.retryRoom.addEventListener('click', retryRoom);
   els.leaveRoom.addEventListener('click', leaveRoom);
   els.createRoom.addEventListener('click', startHostRoom);
+
+  els.joinForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const target = normalizeInviteCode(els.joinCode.value);
+    if (!target) {
+      showJoinMessage('请输入有效的邀请码');
+      els.joinCode.focus();
+      return;
+    }
+    showJoinMessage('');
+    startGuestRoom(target);
+  });
 
   /* -------------------------------------------------------------
      Transfer: incoming packets
@@ -1418,7 +1485,7 @@
     switch (packet.type) {
       case 'text':
         if (typeof packet.text === 'string' && packet.text) {
-          addMessage(packet.text.slice(0, MAX_TEXT_LENGTH), 'in');
+          addMessage(packet.text, 'in');
         }
         break;
       case 'file-start':
@@ -1449,7 +1516,7 @@
     if (!Number.isFinite(size) || size < 0) return;
     const mime = sanitizeMime(packet.mime);
     const row = createFileRow(id, path, size, 'in');
-    const transfer = {
+    incomingTransfers.set(id, {
       id,
       path,
       size,
@@ -1459,8 +1526,7 @@
       crcState: 0xFFFFFFFF,
       row,
       lastPaint: 0
-    };
-    incomingTransfers.set(id, transfer);
+    });
     setFileRowStatus(row, '正在接收');
     scrollFileActivity();
   }
@@ -1469,21 +1535,15 @@
     const data = packet && packet.data;
     const transfer = incomingTransfers.get(packet.id);
     if (!transfer || !data) return;
-
     let bytes;
-    if (data instanceof ArrayBuffer) {
-      bytes = new Uint8Array(data);
-    } else if (ArrayBuffer.isView(data)) {
-      bytes = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
-    } else {
-      return;
-    }
+    if (data instanceof ArrayBuffer) bytes = new Uint8Array(data);
+    else if (ArrayBuffer.isView(data)) bytes = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+    else return;
 
     if (transfer.received + bytes.length > transfer.size) {
       bytes = bytes.subarray(0, Math.max(0, transfer.size - transfer.received));
     }
     if (!bytes.length) return;
-
     transfer.chunks.push(bytes);
     transfer.crcState = updateCrc32(transfer.crcState, bytes);
     transfer.received += bytes.length;
@@ -1499,10 +1559,9 @@
     const transfer = incomingTransfers.get(packet.id);
     if (!transfer) return;
     incomingTransfers.delete(packet.id);
-
     const blob = new Blob(transfer.chunks, { type: transfer.mime });
     transfer.chunks.length = 0;
-    const file = {
+    receivedFiles.push({
       id: transfer.id,
       path: transfer.path,
       name: basename(transfer.path),
@@ -1510,8 +1569,7 @@
       mime: transfer.mime,
       blob,
       crc: (transfer.crcState ^ 0xFFFFFFFF) >>> 0
-    };
-    receivedFiles.push(file);
+    });
     completeFileRow(transfer.row, '已接收', true);
     updateReceivedMeta();
     scrollFileActivity();
@@ -1549,7 +1607,6 @@
     if (!connectionOnline() || outgoingActive) return;
     const files = Array.from(fileList || []);
     if (!files.length) return;
-
     const seen = new Set();
     const next = [];
     files.forEach((item) => {
@@ -1561,7 +1618,6 @@
       seen.add(key);
       next.push({ file, path, size: file.size });
     });
-
     next.sort((a, b) => a.path.localeCompare(b.path, 'zh-Hans-CN'));
     selectedFiles = next;
     renderPendingFiles();
@@ -1577,23 +1633,19 @@
       els.pendingSummary.textContent = '';
       return;
     }
-
     const fragment = document.createDocumentFragment();
     selectedFiles.forEach((entry, index) => {
       const row = document.createElement('li');
       row.className = 'pending-item';
-
       const name = document.createElement('span');
       name.className = 'pending-name';
       name.textContent = entry.path;
       name.title = entry.path;
       row.appendChild(name);
-
       const size = document.createElement('span');
       size.className = 'pending-size';
       size.textContent = formatBytes(entry.size);
       row.appendChild(size);
-
       const remove = document.createElement('button');
       remove.type = 'button';
       remove.className = 'pending-remove';
@@ -1601,10 +1653,8 @@
       remove.dataset.removeIndex = String(index);
       remove.appendChild(icon('i-close'));
       row.appendChild(remove);
-
       fragment.appendChild(row);
     });
-
     els.pendingFiles.appendChild(fragment);
     els.pendingBox.hidden = false;
     els.pendingSummary.textContent = selectedFiles.length + ' 个文件 · ' + formatBytes(selectedBytes());
@@ -1647,7 +1697,6 @@
       if (connectionOnline() && !outgoingActive) els.dropzone.classList.add('is-dragging');
     });
   });
-
   ['dragleave', 'drop'].forEach((type) => {
     els.dropzone.addEventListener(type, (event) => {
       event.preventDefault();
@@ -1662,8 +1711,6 @@
       addPendingFiles(event.dataTransfer.files);
       return;
     }
-
-    const collected = [];
     const entries = [];
     for (let index = 0; index < items.length; index += 1) {
       if (typeof items[index].webkitGetAsEntry === 'function') {
@@ -1671,16 +1718,12 @@
         if (entry) entries.push(entry);
       }
     }
-
     if (!entries.length) {
       addPendingFiles(event.dataTransfer.files);
       return;
     }
-
-    for (const entry of entries) {
-      const result = await readEntry(entry, '');
-      collected.push(...result);
-    }
+    const collected = [];
+    for (const entry of entries) collected.push(...await readEntry(entry, ''));
     addPendingFiles(collected);
   });
 
@@ -1693,16 +1736,13 @@
         }, () => resolve([]));
         return;
       }
-
       if (!entry.isDirectory) {
         resolve([]);
         return;
       }
-
       const reader = entry.createReader();
       const prefix = basePath + entry.name + '/';
       const all = [];
-
       const readBatch = () => {
         reader.readEntries(async (batch) => {
           if (!batch.length) {
@@ -1727,7 +1767,6 @@
       await sleep(1);
       return;
     }
-
     let guard = 0;
     while (connectionOnline() && channel.bufferedAmount > BUFFER_LIMIT) {
       await sleep(16);
@@ -1739,7 +1778,6 @@
 
   async function sendSelectedFiles() {
     if (!connectionOnline() || outgoingActive || !selectedFiles.length) return;
-
     const batch = selectedFiles.slice();
     const totalBytes = batch.reduce((sum, entry) => sum + entry.size, 0);
     outgoingActive = true;
@@ -1756,8 +1794,6 @@
     lastProgressPaint = 0;
 
     try {
-      if (!connectionOnline()) throw new Error('连接已断开');
-
       for (let index = 0; index < batch.length; index += 1) {
         const entry = batch[index];
         const id = randomId();
@@ -1781,12 +1817,10 @@
           await waitForChannel();
           conn.send({ type: 'file-chunk', id, data: buffer });
           offset += buffer.byteLength;
-
           const overall = totalBytes > 0
             ? (completedBytes + offset) / totalBytes
             : (index + 1) / batch.length;
-          const rowFraction = entry.size > 0 ? offset / entry.size : 1;
-          setFileProgressPercent(activeRow, rowFraction * 100, '正在发送');
+          setFileProgressPercent(activeRow, entry.size > 0 ? (offset / entry.size) * 100 : 100, '正在发送');
           updateOverallProgress(index, batch.length, entry.path, overall);
         }
 
@@ -1803,9 +1837,7 @@
     } catch (error) {
       if (activeRow) markFileRowError(activeRow, '发送中断');
       if (activeId) {
-        try {
-          if (connectionOnline()) conn.send({ type: 'file-cancel', id: activeId });
-        } catch (sendError) {}
+        try { if (connectionOnline()) conn.send({ type: 'file-cancel', id: activeId }); } catch (sendError) {}
       }
       els.transferProgress.hidden = true;
       showRoomMessage(error && error.message ? error.message : '文件发送失败');
@@ -1845,7 +1877,6 @@
 
     const info = document.createElement('div');
     info.className = 'file-item-info';
-
     const top = document.createElement('div');
     top.className = 'file-item-top';
     const name = document.createElement('span');
@@ -1868,7 +1899,6 @@
     const progressBar = document.createElement('span');
     progress.appendChild(progressBar);
     info.appendChild(progress);
-
     row.appendChild(info);
 
     const action = document.createElement('span');
@@ -1877,7 +1907,6 @@
 
     els.fileEmpty.hidden = true;
     els.fileActivity.appendChild(row);
-
     return { row, status, size: fileSize, progress, progressBar, action };
   }
 
@@ -1892,8 +1921,7 @@
   }
 
   function setFileProgressBytes(row, received, total, prefix) {
-    const percent = total > 0 ? (received / total) * 100 : 0;
-    setFileProgressPercent(row, percent, prefix);
+    setFileProgressPercent(row, total > 0 ? (received / total) * 100 : 0, prefix);
   }
 
   function completeFileRow(row, label, addDownload) {
@@ -2006,7 +2034,6 @@
       localView.setUint32(22, size, true);
       localView.setUint16(26, nameBytes.length, true);
       localView.setUint16(28, 0, true);
-
       parts.push(local, nameBytes, file.blob);
 
       const central = new Uint8Array(46);
@@ -2050,6 +2077,1012 @@
   }
 
   /* -------------------------------------------------------------
+     Chat: session and preferences
+  ------------------------------------------------------------- */
+
+  function getAccounts() {
+    return Array.isArray(window.SERLANE_ACCOUNTS)
+      ? window.SERLANE_ACCOUNTS.filter((account) => (
+        account &&
+        typeof account.username === 'string' &&
+        typeof account.password === 'string' &&
+        typeof account.apiKey === 'string'
+      ))
+      : [];
+  }
+
+  function defaultChatPrompt() {
+    return '你是「颂」，石径松轩中的 AI 助手。请使用与用户相同的语言，回答简洁、准确、直接。遇到实时信息或需要核实的事实，优先使用联网搜索并附上来源。';
+  }
+
+  function hashString(value) {
+    let hash = 5381;
+    for (let index = 0; index < value.length; index += 1) {
+      hash = ((hash << 5) + hash + value.charCodeAt(index)) | 0;
+    }
+    return (hash >>> 0).toString(36);
+  }
+
+  function maskKey(key) {
+    const value = String(key || '');
+    if (value.length <= 12) return value;
+    return value.slice(0, 7) + '…' + value.slice(-4);
+  }
+
+  function normalizeChatSession(raw) {
+    if (!raw || typeof raw !== 'object' || typeof raw.apiKey !== 'string' || !raw.apiKey) return null;
+    const kind = raw.kind === 'key' ? 'key' : 'account';
+    return {
+      kind,
+      entryId: typeof raw.entryId === 'string' ? raw.entryId : '',
+      username: typeof raw.username === 'string' ? raw.username : '',
+      displayName: typeof raw.displayName === 'string' && raw.displayName
+        ? raw.displayName
+        : (kind === 'key' ? '手动 API Key' : raw.username || '已登录'),
+      apiKey: raw.apiKey,
+      model: typeof raw.model === 'string' && raw.model ? raw.model : 'deepseek-flash',
+      systemPrompt: typeof raw.systemPrompt === 'string' && raw.systemPrompt.trim()
+        ? raw.systemPrompt
+        : defaultChatPrompt()
+    };
+  }
+
+  function loadChatSession() {
+    try {
+      const raw = localStorage.getItem(CHAT_SESSION_KEY);
+      if (!raw) return null;
+      return normalizeChatSession(JSON.parse(raw));
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function saveChatSession(session) {
+    try {
+      localStorage.setItem(CHAT_SESSION_KEY, JSON.stringify(session));
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  function clearChatSession() {
+    try { localStorage.removeItem(CHAT_SESSION_KEY); } catch (error) {}
+  }
+
+  function normalizeVaultEntry(raw) {
+    if (!raw || typeof raw !== 'object' || typeof raw.apiKey !== 'string' || !raw.apiKey) return null;
+    const kind = raw.kind === 'key' ? 'key' : 'account';
+    return {
+      id: typeof raw.id === 'string' && raw.id ? raw.id : randomId(),
+      kind,
+      username: typeof raw.username === 'string' ? raw.username : '',
+      password: typeof raw.password === 'string' ? raw.password : '',
+      displayName: typeof raw.displayName === 'string' ? raw.displayName : '',
+      apiKey: raw.apiKey,
+      model: typeof raw.model === 'string' && raw.model ? raw.model : 'deepseek-flash',
+      systemPrompt: typeof raw.systemPrompt === 'string' && raw.systemPrompt.trim()
+        ? raw.systemPrompt
+        : defaultChatPrompt(),
+      updatedAt: Number.isFinite(raw.updatedAt) ? raw.updatedAt : Date.now()
+    };
+  }
+
+  function loadVault() {
+    try {
+      const raw = JSON.parse(localStorage.getItem(CHAT_VAULT_KEY) || '[]');
+      if (!Array.isArray(raw)) return [];
+      return raw.map(normalizeVaultEntry).filter(Boolean).slice(0, 12);
+    } catch (error) {
+      return [];
+    }
+  }
+
+  function saveVault(entries) {
+    try {
+      localStorage.setItem(CHAT_VAULT_KEY, JSON.stringify(entries.slice(0, 12)));
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  function upsertVault(entry) {
+    const normalized = normalizeVaultEntry(entry);
+    if (!normalized) return null;
+    const vault = loadVault();
+    const index = vault.findIndex((item) => item.id === normalized.id);
+    if (index >= 0) {
+      vault[index] = { ...vault[index], ...normalized, updatedAt: Date.now() };
+    } else {
+      vault.unshift({ ...normalized, updatedAt: Date.now() });
+    }
+    saveVault(vault);
+    return normalized;
+  }
+
+  function removeVault(id) {
+    const vault = loadVault().filter((entry) => entry.id !== id);
+    saveVault(vault);
+  }
+
+  function sessionFromEntry(entry) {
+    return {
+      kind: entry.kind,
+      entryId: entry.id,
+      username: entry.username || '',
+      displayName: entry.displayName || (entry.kind === 'account' ? entry.username : '手动 API Key'),
+      apiKey: entry.apiKey,
+      model: entry.model || 'deepseek-flash',
+      systemPrompt: entry.systemPrompt || defaultChatPrompt()
+    };
+  }
+
+  function ensureSessionInVault() {
+    if (!chatSession) return;
+    const vault = loadVault();
+    const existing = vault.find((entry) => {
+      if (chatSession.entryId && entry.id === chatSession.entryId) return true;
+      return entry.kind === chatSession.kind &&
+        (entry.kind === 'account' ? entry.username === chatSession.username : entry.apiKey === chatSession.apiKey);
+    });
+    if (existing) {
+      chatSession.entryId = existing.id;
+      saveChatSession(chatSession);
+      return;
+    }
+    const entry = {
+      id: chatSession.entryId || (chatSession.kind === 'account'
+        ? 'account:' + chatSession.username
+        : 'key:' + hashString(chatSession.apiKey)),
+      kind: chatSession.kind,
+      username: chatSession.username,
+      password: '',
+      displayName: chatSession.displayName,
+      apiKey: chatSession.apiKey,
+      model: chatSession.model,
+      systemPrompt: chatSession.systemPrompt
+    };
+    upsertVault(entry);
+    chatSession.entryId = entry.id;
+    saveChatSession(chatSession);
+  }
+
+  function isActiveVaultEntry(entry) {
+    if (!chatSession) return false;
+    if (chatSession.entryId && entry.id === chatSession.entryId) return true;
+    return entry.kind === chatSession.kind &&
+      (entry.kind === 'account' ? entry.username === chatSession.username : entry.apiKey === chatSession.apiKey);
+  }
+
+  function loadChatPrefs() {
+    try {
+      const prefs = JSON.parse(localStorage.getItem(CHAT_PREFS_KEY) || 'null');
+      if (prefs && typeof prefs.search === 'boolean') searchEnabled = prefs.search;
+      if (prefs && typeof prefs.thinking === 'boolean') thinkingEnabled = prefs.thinking;
+    } catch (error) {}
+  }
+
+  function saveChatPrefs() {
+    try {
+      localStorage.setItem(CHAT_PREFS_KEY, JSON.stringify({ search: searchEnabled, thinking: thinkingEnabled }));
+    } catch (error) {}
+  }
+
+  function updateChatToggleButtons() {
+    els.chatSearch.classList.toggle('is-on', searchEnabled);
+    els.chatSearch.setAttribute('aria-pressed', searchEnabled ? 'true' : 'false');
+    els.chatThink.classList.toggle('is-on', thinkingEnabled);
+    els.chatThink.setAttribute('aria-pressed', thinkingEnabled ? 'true' : 'false');
+  }
+
+  function updateChatControls() {
+    const ready = Boolean(chatSession) && !chatBusy;
+    els.chatInput.disabled = !ready;
+    els.chatSend.disabled = !ready || !els.chatInput.value.trim();
+    els.chatStop.hidden = !chatBusy;
+    els.chatSearch.disabled = !ready;
+    els.chatThink.disabled = !ready;
+    els.chatNew.disabled = !ready;
+    els.chatAccount.disabled = chatBusy;
+  }
+
+  function showLogin() {
+    els.loginPanel.hidden = false;
+    els.chatApp.hidden = true;
+    els.chatInput.disabled = true;
+    els.chatSend.disabled = true;
+    els.chatStop.hidden = true;
+    updateChatControls();
+  }
+
+  function showChat() {
+    els.loginPanel.hidden = true;
+    els.chatApp.hidden = false;
+    els.chatUser.textContent = chatSession.displayName || chatSession.username || '已登录';
+    els.chatModel.textContent = (chatSession.model || 'deepseek-flash') + ' · 通过 API 直连';
+    updateChatControls();
+  }
+
+  function resetChatMessages() {
+    chatHistory = [];
+    Array.from(els.chatMessages.querySelectorAll('.chat-message')).forEach((message) => message.remove());
+    els.chatWelcome.hidden = false;
+    setChatStatus('');
+    if (chatSession) updateChatControls();
+  }
+
+  function setChatStatus(message) {
+    els.chatStatus.textContent = message || '';
+    els.chatStatus.hidden = !message;
+  }
+
+  function setChatBusy(busy) {
+    chatBusy = busy;
+    if (busy) {
+      els.chatStop.hidden = false;
+      els.chatInput.disabled = true;
+      els.chatSend.disabled = true;
+      els.chatSearch.disabled = true;
+      els.chatThink.disabled = true;
+      els.chatNew.disabled = true;
+      els.chatAccount.disabled = true;
+    } else {
+      els.chatStop.hidden = true;
+      updateChatControls();
+      updateChatToggleButtons();
+    }
+  }
+
+  function setAuthMode(mode) {
+    const keyMode = mode === 'key';
+    els.authModeAccount.classList.toggle('is-active', !keyMode);
+    els.authModeKey.classList.toggle('is-active', keyMode);
+    els.authModeAccount.setAttribute('aria-pressed', !keyMode ? 'true' : 'false');
+    els.authModeKey.setAttribute('aria-pressed', keyMode ? 'true' : 'false');
+    els.authAccountPanel.hidden = keyMode;
+    els.authKeyPanel.hidden = !keyMode;
+    showLoginMessage('');
+    showKeyMessage('');
+  }
+
+  function showLoginMessage(message) {
+    els.loginMessage.textContent = message || '';
+    els.loginMessage.hidden = !message;
+  }
+
+  function showKeyMessage(message) {
+    els.keyMessage.textContent = message || '';
+    els.keyMessage.hidden = !message;
+  }
+
+  function activateSession(session) {
+    chatSession = session;
+    chatSession.systemPrompt = chatSession.systemPrompt || defaultChatPrompt();
+    saveChatSession(chatSession);
+    ensureSessionInVault();
+    resetChatMessages();
+    showChat();
+  }
+
+  function login() {
+    const username = els.loginUser.value.trim();
+    const password = els.loginPass.value;
+    const accounts = getAccounts();
+    if (!accounts.length) {
+      showLoginMessage('还没有配置账号，请先编辑 chat-accounts.js');
+      return;
+    }
+    const account = accounts.find((entry) => entry.username === username);
+    if (!account || account.password !== password) {
+      showLoginMessage('账号或密码不正确');
+      return;
+    }
+    if (!account.apiKey || /^sk-x+$/i.test(account.apiKey) || account.apiKey.includes('REPLACE')) {
+      showLoginMessage('请先在 chat-accounts.js 中填写有效的 API Key');
+      return;
+    }
+
+    const entry = {
+      id: 'account:' + account.username,
+      kind: 'account',
+      username: account.username,
+      password: account.password,
+      displayName: account.displayName || account.username,
+      apiKey: account.apiKey,
+      model: account.model || 'deepseek-flash',
+      systemPrompt: account.systemPrompt || defaultChatPrompt()
+    };
+    upsertVault(entry);
+    showLoginMessage('');
+    els.loginForm.reset();
+    activateSession(sessionFromEntry(entry));
+    showToast('已登录');
+  }
+
+  function loginWithKey() {
+    const apiKey = els.keyInput.value.trim();
+    if (!/^sk-[A-Za-z0-9_-]{10,}$/.test(apiKey)) {
+      showKeyMessage('请输入有效的 DeepSeek API Key');
+      els.keyInput.focus();
+      return;
+    }
+    const id = 'key:' + hashString(apiKey);
+    const entry = {
+      id,
+      kind: 'key',
+      username: '',
+      password: '',
+      displayName: '手动 API Key',
+      apiKey,
+      model: 'deepseek-flash',
+      systemPrompt: defaultChatPrompt()
+    };
+    upsertVault(entry);
+    showKeyMessage('');
+    els.keyInput.value = '';
+    activateSession(sessionFromEntry(entry));
+    showToast('API Key 已保存在本机');
+  }
+
+  function logout(options) {
+    const keepVault = Boolean(options && options.keepVault);
+    if (chatBusy && chatController) {
+      try { chatController.abort(); } catch (error) {}
+    }
+    clearChatSession();
+    chatSession = null;
+    chatBusy = false;
+    chatHistory = [];
+    setChatStatus('');
+    Array.from(els.chatMessages.querySelectorAll('.chat-message')).forEach((message) => message.remove());
+    els.chatWelcome.hidden = false;
+    showLoginMessage('');
+    showKeyMessage('');
+    els.loginPass.value = '';
+    els.keyInput.value = '';
+    if (els.accountDialog.open) els.accountDialog.close();
+    showLogin();
+    if (!keepVault) renderVault();
+  }
+
+  function renderVault() {
+    const vault = loadVault();
+    els.vaultList.replaceChildren();
+    if (!vault.length) {
+      const empty = document.createElement('p');
+      empty.className = 'vault-empty';
+      empty.textContent = '本机还没有保存的账号或 API Key。';
+      els.vaultList.appendChild(empty);
+    } else {
+      vault.forEach((entry) => {
+        const active = isActiveVaultEntry(entry);
+        const item = document.createElement('div');
+        item.className = 'vault-item' + (active ? ' is-active' : '');
+
+        const info = document.createElement('div');
+        info.className = 'vault-info';
+        const head = document.createElement('div');
+        head.className = 'vault-item-head';
+        const kind = document.createElement('span');
+        kind.className = 'vault-kind';
+        kind.textContent = entry.kind === 'account' ? '账号' : 'API Key';
+        const name = document.createElement('strong');
+        name.textContent = entry.kind === 'account'
+          ? (entry.username || '未命名账号')
+          : (entry.displayName || '手动 API Key');
+        head.appendChild(kind);
+        head.appendChild(name);
+        if (active) {
+          const badge = document.createElement('span');
+          badge.className = 'vault-active';
+          badge.textContent = '使用中';
+          head.appendChild(badge);
+        }
+        info.appendChild(head);
+
+        const masked = document.createElement('p');
+        masked.className = 'vault-masked';
+        masked.textContent = maskKey(entry.apiKey);
+        info.appendChild(masked);
+
+        const meta = document.createElement('p');
+        meta.className = 'vault-meta';
+        meta.textContent = (entry.model || 'deepseek-flash') + (entry.kind === 'account' ? ' · 密码已保存在本机' : ' · 导入的 Key');
+        info.appendChild(meta);
+        item.appendChild(info);
+
+        const actions = document.createElement('div');
+        actions.className = 'vault-actions';
+        if (!active) {
+          const use = document.createElement('button');
+          use.type = 'button';
+          use.className = 'btn btn-quiet btn-small';
+          use.dataset.vaultUse = entry.id;
+          use.textContent = '使用';
+          actions.appendChild(use);
+        }
+        const remove = document.createElement('button');
+        remove.type = 'button';
+        remove.className = 'btn btn-danger btn-quiet btn-small';
+        remove.dataset.vaultDelete = entry.id;
+        remove.textContent = '删除';
+        actions.appendChild(remove);
+        item.appendChild(actions);
+        els.vaultList.appendChild(item);
+      });
+    }
+
+    els.vaultLogout.hidden = !chatSession;
+    els.vaultClear.disabled = !chatSession && vault.length === 0;
+  }
+
+  function openAccountManager() {
+    vaultClearArmed = false;
+    window.clearTimeout(vaultClearTimer);
+    els.vaultClear.textContent = '清除全部';
+    renderVault();
+    if (!els.accountDialog.open) els.accountDialog.showModal();
+  }
+
+  function useVaultEntry(id) {
+    const entry = loadVault().find((item) => item.id === id);
+    if (!entry) return;
+    activateSession(sessionFromEntry(entry));
+    els.accountDialog.close();
+    showToast('已切换账号');
+  }
+
+  function deleteVaultEntry(id) {
+    const active = isActiveVaultEntry(loadVault().find((entry) => entry.id === id) || {});
+    removeVault(id);
+    if (active) {
+      logout({ keepVault: true });
+      showToast('已删除当前账号');
+    } else {
+      renderVault();
+      showToast('已删除');
+    }
+  }
+
+  function clearAllAccountData() {
+    if (chatBusy && chatController) {
+      try { chatController.abort(); } catch (error) {}
+    }
+    clearChatSession();
+    chatSession = null;
+    chatBusy = false;
+    chatHistory = [];
+    setChatStatus('');
+    try { localStorage.removeItem(CHAT_VAULT_KEY); } catch (error) {}
+    Array.from(els.chatMessages.querySelectorAll('.chat-message')).forEach((message) => message.remove());
+    els.chatWelcome.hidden = false;
+    showLoginMessage('');
+    showKeyMessage('');
+    els.loginPass.value = '';
+    els.keyInput.value = '';
+    if (els.accountDialog.open) els.accountDialog.close();
+    showLogin();
+    renderVault();
+    showToast('本机账号数据已清除');
+  }
+
+  function appendChatMessage(role, content) {
+    if (els.chatWelcome) els.chatWelcome.hidden = true;
+    const row = document.createElement('div');
+    row.className = 'chat-message ' + (role === 'user' ? 'is-user' : 'is-assistant');
+
+    const bubble = document.createElement('div');
+    bubble.className = 'chat-bubble';
+    bubble.textContent = content || '';
+    row.appendChild(bubble);
+
+    const meta = document.createElement('div');
+    meta.className = 'chat-message-meta';
+    row.appendChild(meta);
+
+    els.chatMessages.appendChild(row);
+    scrollChat();
+    return { row, bubble, meta };
+  }
+
+  function appendChatInline(parent, text) {
+    const tokens = String(text).split(/(`[^`\n]+`|\*\*[^*\n]+\*\*|\[[^\]\n]+\]\(https?:\/\/[^\s)]+\))/g);
+    tokens.forEach((token) => {
+      if (!token) return;
+      if (token.startsWith('`') && token.endsWith('`') && token.length > 2) {
+        const code = document.createElement('code');
+        code.textContent = token.slice(1, -1);
+        parent.appendChild(code);
+        return;
+      }
+      if (token.startsWith('**') && token.endsWith('**') && token.length > 4) {
+        const strong = document.createElement('strong');
+        strong.textContent = token.slice(2, -2);
+        parent.appendChild(strong);
+        return;
+      }
+      const linkMatch = token.match(/^\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)$/);
+      if (linkMatch && isSafeLink(linkMatch[2])) {
+        const link = document.createElement('a');
+        link.href = linkMatch[2];
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.textContent = linkMatch[1];
+        parent.appendChild(link);
+        return;
+      }
+      parent.appendChild(document.createTextNode(token));
+    });
+  }
+
+  function renderChatMarkdown(container, markdown) {
+    container.replaceChildren();
+    const lines = String(markdown || '').replace(/\r\n/g, '\n').split('\n');
+    let index = 0;
+
+    while (index < lines.length) {
+      const line = lines[index];
+      if (!line.trim()) {
+        index += 1;
+        continue;
+      }
+
+      if (/^```/.test(line)) {
+        index += 1;
+        const codeLines = [];
+        while (index < lines.length && !/^```/.test(lines[index])) {
+          codeLines.push(lines[index]);
+          index += 1;
+        }
+        if (index < lines.length) index += 1;
+        const pre = document.createElement('pre');
+        const code = document.createElement('code');
+        code.textContent = codeLines.join('\n');
+        pre.appendChild(code);
+        container.appendChild(pre);
+        continue;
+      }
+
+      const heading = line.match(/^(#{1,4})\s+(.+)$/);
+      if (heading) {
+        const level = Math.min(4, heading[1].length + 2);
+        const element = document.createElement('h' + level);
+        appendChatInline(element, heading[2]);
+        container.appendChild(element);
+        index += 1;
+        continue;
+      }
+
+      if (/^\s*[-*]\s+/.test(line)) {
+        const list = document.createElement('ul');
+        while (index < lines.length && /^\s*[-*]\s+/.test(lines[index])) {
+          const item = document.createElement('li');
+          appendChatInline(item, lines[index].replace(/^\s*[-*]\s+/, ''));
+          list.appendChild(item);
+          index += 1;
+        }
+        container.appendChild(list);
+        continue;
+      }
+
+      if (/^\s*\d+\.\s+/.test(line)) {
+        const list = document.createElement('ol');
+        while (index < lines.length && /^\s*\d+\.\s+/.test(lines[index])) {
+          const item = document.createElement('li');
+          appendChatInline(item, lines[index].replace(/^\s*\d+\.\s+/, ''));
+          list.appendChild(item);
+          index += 1;
+        }
+        container.appendChild(list);
+        continue;
+      }
+
+      const paragraph = document.createElement('p');
+      appendChatInline(paragraph, line);
+      index += 1;
+      while (index < lines.length && lines[index].trim() &&
+             !/^```/.test(lines[index]) &&
+             !/^#{1,4}\s+/.test(lines[index]) &&
+             !/^\s*[-*]\s+/.test(lines[index]) &&
+             !/^\s*\d+\.\s+/.test(lines[index])) {
+        paragraph.appendChild(document.createElement('br'));
+        appendChatInline(paragraph, lines[index]);
+        index += 1;
+      }
+      container.appendChild(paragraph);
+    }
+  }
+
+  function addChatCopy(ref) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'chat-copy';
+    button.appendChild(icon('i-copy'));
+    button.appendChild(document.createTextNode('复制'));
+    button.addEventListener('click', () => {
+      copyToClipboard(ref.copyText || ref.bubble.textContent)
+        .then(() => {
+          button.lastChild.textContent = '已复制';
+          window.setTimeout(() => { button.lastChild.textContent = '复制'; }, 1400);
+        })
+        .catch(() => showToast('复制失败'));
+    });
+    ref.meta.appendChild(button);
+  }
+
+  function addChatSources(ref, citations) {
+    if (!citations.length) return;
+    const wrap = document.createElement('div');
+    wrap.className = 'chat-sources';
+    citations.slice(0, 8).forEach((citation) => {
+      if (!citation.url || !isSafeLink(citation.url)) return;
+      const link = document.createElement('a');
+      link.className = 'chat-source';
+      link.href = citation.url;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.title = citation.title || citation.url;
+      link.appendChild(icon('i-link'));
+      const title = document.createElement('span');
+      title.textContent = citation.title || prettyHost(citation.url);
+      link.appendChild(title);
+      wrap.appendChild(link);
+    });
+    if (wrap.childElementCount) ref.row.insertBefore(wrap, ref.meta);
+  }
+
+  function scrollChat() {
+    const nearBottom = els.chatMessages.scrollHeight - els.chatMessages.scrollTop - els.chatMessages.clientHeight < 140;
+    if (nearBottom) els.chatMessages.scrollTop = els.chatMessages.scrollHeight;
+  }
+
+  function collectCitation(target, annotation) {
+    if (!annotation || typeof annotation !== 'object') return;
+    if (annotation.type === 'url_citation' && annotation.url_citation) {
+      target.push({
+        url: annotation.url_citation.url,
+        title: annotation.url_citation.title || ''
+      });
+    } else if (annotation.url) {
+      target.push({ url: annotation.url, title: annotation.title || '' });
+    }
+  }
+
+  function dedupeCitations(citations) {
+    const seen = new Set();
+    return citations.filter((citation) => {
+      if (!citation || !citation.url || seen.has(citation.url)) return false;
+      seen.add(citation.url);
+      return true;
+    });
+  }
+
+  async function sendChat() {
+    if (!chatSession || chatBusy) return;
+    const text = els.chatInput.value.trim();
+    if (!text) return;
+
+    appendChatMessage('user', text);
+    chatHistory.push({ role: 'user', content: text });
+    els.chatInput.value = '';
+    updateChatControls();
+
+    const assistantRef = appendChatMessage('assistant', '正在思考…');
+    assistantRef.bubble.classList.add('is-thinking');
+    setChatBusy(true);
+    setChatStatus(searchEnabled ? '正在准备联网…' : '正在思考…');
+
+    const controller = new AbortController();
+    chatController = controller;
+    let fullContent = '';
+    let citations = [];
+    let lastPaint = 0;
+    let queuedPaint = 0;
+
+    const paint = (force) => {
+      const now = performance.now();
+      if (!force && now - lastPaint < 60) {
+        if (!queuedPaint) {
+          queuedPaint = window.setTimeout(() => {
+            queuedPaint = 0;
+            paint(true);
+          }, 64);
+        }
+        return;
+      }
+      lastPaint = now;
+      assistantRef.bubble.classList.remove('is-thinking');
+      assistantRef.bubble.textContent = fullContent;
+      scrollChat();
+    };
+
+    try {
+      const requestBody = {
+        model: chatSession.model || 'deepseek-flash',
+        messages: [
+          {
+            role: 'system',
+            content: chatSession.systemPrompt || '你是石径松轩的 AI 助手「颂」。回答使用用户的语言，简洁、准确、直接。涉及实时信息时，优先联网搜索并附上来源。'
+          },
+          ...chatHistory.slice(-30)
+        ],
+        stream: true,
+        thinking: { type: thinkingEnabled ? 'enabled' : 'disabled' },
+        max_tokens: 4096
+      };
+      if (searchEnabled) {
+        requestBody.tools = [
+          { type: 'deepseek_web_search' },
+          { type: 'deepseek_read_url' }
+        ];
+      }
+
+      const response = await fetch(DEEPSEEK_ENDPOINT, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + chatSession.apiKey
+        },
+        body: JSON.stringify(requestBody),
+        signal: controller.signal
+      });
+
+      if (!response.ok) {
+        let message = '请求失败（' + response.status + '）';
+        try {
+          const errorBody = await response.json();
+          if (errorBody && errorBody.error && errorBody.error.message) message = errorBody.error.message;
+        } catch (error) {}
+        throw new Error(message);
+      }
+
+      if (!response.body) throw new Error('浏览器没有收到流式响应');
+      const contentType = response.headers.get('content-type') || '';
+      if (!contentType.includes('text/event-stream')) {
+        const data = await response.json();
+        if (data && data.error) throw new Error(data.error.message || 'DeepSeek 返回错误');
+        const content = data && data.choices && data.choices[0] && data.choices[0].message
+          ? data.choices[0].message.content
+          : '';
+        if (content) {
+          fullContent = content;
+          paint(true);
+          const annotations = (data.choices[0].message && data.choices[0].message.annotations) || [];
+          annotations.forEach((annotation) => collectCitation(citations, annotation));
+        } else {
+          throw new Error('没有收到回答内容');
+        }
+      } else {
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let streamDone = false;
+
+        while (!streamDone) {
+          const result = await reader.read();
+          if (result.done) break;
+          buffer += decoder.decode(result.value, { stream: true });
+          let newline = buffer.indexOf('\n');
+          while (newline >= 0) {
+            const line = buffer.slice(0, newline).trim();
+            buffer = buffer.slice(newline + 1);
+            newline = buffer.indexOf('\n');
+            if (!line || line.startsWith(':') || !line.startsWith('data:')) continue;
+            const data = line.slice(5).trim();
+            if (data === '[DONE]') {
+              streamDone = true;
+              break;
+            }
+            let event;
+            try {
+              event = JSON.parse(data);
+            } catch (error) {
+              continue;
+            }
+            if (event.error) {
+              throw new Error(event.error.message || 'DeepSeek 返回错误');
+            }
+            const choice = event.choices && event.choices[0];
+            if (!choice) continue;
+            const delta = choice.delta || {};
+
+            if (choice.server_tool_event) {
+              const toolEvent = choice.server_tool_event;
+              if (toolEvent.type === 'call_started' && toolEvent.call) {
+                const kind = toolEvent.call.kind || '';
+                if (kind.includes('search')) setChatStatus('正在联网搜索…');
+                else if (kind.includes('read') || kind.includes('open_page')) setChatStatus('正在阅读网页…');
+                else setChatStatus('正在思考…');
+              } else if (toolEvent.type === 'call_completed') {
+                setChatStatus('正在整理答案…');
+                if (toolEvent.call && Array.isArray(toolEvent.call.sources)) {
+                  toolEvent.call.sources.forEach((source) => collectCitation(citations, source));
+                }
+                if (toolEvent.call && toolEvent.call.page) collectCitation(citations, toolEvent.call.page);
+              }
+            }
+
+            if (delta.reasoning_content) {
+              if (!fullContent) setChatStatus('正在思考…');
+            }
+            if (typeof delta.content === 'string' && delta.content) {
+              const wasEmpty = !fullContent;
+              fullContent += delta.content;
+              if (wasEmpty) setChatStatus('正在回答…');
+              paint();
+            }
+
+            const annotations = delta.annotations ||
+              choice.annotations ||
+              (choice.message && choice.message.annotations) ||
+              [];
+            if (Array.isArray(annotations)) annotations.forEach((annotation) => collectCitation(citations, annotation));
+            if (delta.server_tool_calls) {
+              delta.server_tool_calls.forEach((step) => {
+                (step.calls || []).forEach((call) => {
+                  if (Array.isArray(call.sources)) call.sources.forEach((source) => collectCitation(citations, source));
+                  if (call.page) collectCitation(citations, call.page);
+                });
+              });
+            }
+          }
+        }
+      }
+
+      if (queuedPaint) {
+        window.clearTimeout(queuedPaint);
+        queuedPaint = 0;
+      }
+      paint(true);
+      if (!fullContent.trim()) throw new Error('没有收到回答内容');
+      assistantRef.bubble.classList.remove('is-thinking');
+      assistantRef.copyText = fullContent;
+      renderChatMarkdown(assistantRef.bubble, fullContent);
+      citations = dedupeCitations(citations);
+      addChatSources(assistantRef, citations);
+      addChatCopy(assistantRef);
+      chatHistory.push({ role: 'assistant', content: fullContent });
+      setChatStatus('');
+      scrollChat();
+    } catch (error) {
+      if (queuedPaint) {
+        window.clearTimeout(queuedPaint);
+        queuedPaint = 0;
+      }
+      if (error && error.name === 'AbortError') {
+        if (fullContent.trim()) {
+          assistantRef.copyText = fullContent;
+          renderChatMarkdown(assistantRef.bubble, fullContent);
+          assistantRef.bubble.classList.remove('is-thinking');
+          addChatCopy(assistantRef);
+          chatHistory.push({ role: 'assistant', content: fullContent });
+          scrollChat();
+        } else {
+          assistantRef.row.remove();
+        }
+        setChatStatus('已停止');
+      } else {
+        assistantRef.row.classList.add('is-error');
+        assistantRef.bubble.classList.remove('is-thinking');
+        assistantRef.bubble.textContent = error && error.message ? error.message : '请求失败';
+        setChatStatus('');
+      }
+    } finally {
+      chatController = null;
+      setChatBusy(false);
+    }
+  }
+
+  els.loginForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+    login();
+  });
+
+  els.keyForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+    loginWithKey();
+  });
+
+  els.authModeAccount.addEventListener('click', () => setAuthMode('account'));
+  els.authModeKey.addEventListener('click', () => setAuthMode('key'));
+
+  els.loginUser.addEventListener('input', () => {
+    if (!els.loginMessage.hidden) showLoginMessage('');
+  });
+  els.loginPass.addEventListener('input', () => {
+    if (!els.loginMessage.hidden) showLoginMessage('');
+  });
+  els.keyInput.addEventListener('input', () => {
+    if (!els.keyMessage.hidden) showKeyMessage('');
+  });
+
+  els.manageAuth.addEventListener('click', openAccountManager);
+  els.chatAccount.addEventListener('click', openAccountManager);
+
+  els.accountDialog.addEventListener('click', (event) => {
+    if (event.target === els.accountDialog) els.accountDialog.close();
+  });
+
+  els.vaultList.addEventListener('click', (event) => {
+    const use = event.target.closest('[data-vault-use]');
+    if (use) {
+      useVaultEntry(use.dataset.vaultUse);
+      return;
+    }
+    const remove = event.target.closest('[data-vault-delete]');
+    if (remove) {
+      deleteVaultEntry(remove.dataset.vaultDelete);
+    }
+  });
+
+  els.vaultLogout.addEventListener('click', () => {
+    logout();
+    showToast('已退出登录');
+  });
+
+  els.vaultClear.addEventListener('click', () => {
+    if (els.vaultClear.disabled) return;
+    if (!vaultClearArmed) {
+      vaultClearArmed = true;
+      els.vaultClear.textContent = '再点一次确认';
+      window.clearTimeout(vaultClearTimer);
+      vaultClearTimer = window.setTimeout(() => {
+        vaultClearArmed = false;
+        els.vaultClear.textContent = '清除全部';
+      }, 3200);
+      return;
+    }
+    vaultClearArmed = false;
+    window.clearTimeout(vaultClearTimer);
+    els.vaultClear.textContent = '清除全部';
+    clearAllAccountData();
+  });
+
+  els.accountDialog.addEventListener('close', () => {
+    vaultClearArmed = false;
+    window.clearTimeout(vaultClearTimer);
+    els.vaultClear.textContent = '清除全部';
+  });
+
+  els.chatForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+    sendChat();
+  });
+  els.chatInput.addEventListener('input', updateChatControls);
+  els.chatInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+      event.preventDefault();
+      sendChat();
+    }
+  });
+
+  els.chatStop.addEventListener('click', () => {
+    if (chatController) {
+      try { chatController.abort(); } catch (error) {}
+    }
+  });
+  els.chatNew.addEventListener('click', () => {
+    if (chatBusy) return;
+    resetChatMessages();
+    els.chatInput.value = '';
+    updateChatControls();
+    els.chatInput.focus();
+  });
+  els.chatSearch.addEventListener('click', () => {
+    if (chatBusy) return;
+    searchEnabled = !searchEnabled;
+    updateChatToggleButtons();
+    saveChatPrefs();
+  });
+  els.chatThink.addEventListener('click', () => {
+    if (chatBusy) return;
+    thinkingEnabled = !thinkingEnabled;
+    updateChatToggleButtons();
+    saveChatPrefs();
+  });
+
+  /* -------------------------------------------------------------
      Clipboard and toast
   ------------------------------------------------------------- */
 
@@ -2085,7 +3118,6 @@
     window.clearTimeout(toastTimer);
     els.toastText.textContent = message;
     els.toast.hidden = false;
-
     if (action) {
       els.toastAction.hidden = false;
       els.toastAction.textContent = action.label || '撤销';
@@ -2097,7 +3129,6 @@
       els.toastAction.hidden = true;
       els.toastAction.onclick = null;
     }
-
     els.toast.style.animation = 'none';
     void els.toast.offsetWidth;
     els.toast.style.animation = '';
@@ -2111,7 +3142,7 @@
   }
 
   /* -------------------------------------------------------------
-     Boot and lifecycle
+     Boot
   ------------------------------------------------------------- */
 
   window.addEventListener('storage', (event) => {
@@ -2120,18 +3151,26 @@
     renderSites();
   });
 
-  const roomFromUrl = roomTargetFromHash();
   renderSites();
-  updateNewTabLink();
-  hideUrlError();
+  applyRoute();
   setCodecMode('encode');
-  updateRoomControls();
-
-  if (roomFromUrl) {
-    startGuestRoom(roomFromUrl);
+  hideSiteMessage();
+  loadChatPrefs();
+  updateChatToggleButtons();
+  setAuthMode('account');
+  if (chatSession) {
+    ensureSessionInVault();
+    showChat();
+  } else {
+    showLogin();
   }
+  updateChatControls();
+  updateRoomControls();
 
   window.addEventListener('beforeunload', () => {
     try { closePeer(); } catch (error) {}
+    if (chatController) {
+      try { chatController.abort(); } catch (error) {}
+    }
   });
 })();

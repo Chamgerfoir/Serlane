@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="description" content="石径松轩 Serlane：收藏常用网站，点对点传送文件与文字，转换 Base64。">
+  <meta name="description" content="石径松轩 Serlane：网页跳转、收藏、点对点传输、Base64 与 DeepSeek 对话。">
   <meta name="theme-color" content="#FBF2E3">
   <title>石径松轩 · Serlane</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='10' fill='%235D8350'/%3E%3Cpath d='M9 21c3.4 0 4.2-3.1 7-3.1s3.6 3.1 7 3.1M16 7.5l4.2 7.2H11.8L16 7.5Zm0 7.2v3.2' stroke='%23FBF2E3' stroke-width='1.7' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="styles.css">
 </head>
-<body id="top">
+<body>
   <svg class="icon-sprite" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
     <symbol id="i-search" viewBox="0 0 24 24">
       <circle cx="10.8" cy="10.8" r="6.3"/>
@@ -85,11 +85,22 @@
     <symbol id="i-sparkle" viewBox="0 0 24 24">
       <path d="M12 3.5c.5 4.7 3.8 8 8.5 8.5-4.7.5-8 3.8-8.5 8.5-.5-4.7-3.8-8-8.5-8.5 4.7-.5 8-3.8 8.5-8.5Z"/>
     </symbol>
+    <symbol id="i-logout" viewBox="0 0 24 24">
+      <path d="M10 5H6.5A1.5 1.5 0 0 0 5 6.5v11A1.5 1.5 0 0 0 6.5 19H10"/>
+      <path d="M13 8.5 16.5 12 13 15.5M9 12h7.5"/>
+    </symbol>
+    <symbol id="i-user" viewBox="0 0 24 24">
+      <circle cx="12" cy="8" r="3.4"/>
+      <path d="M5 20a7 7 0 0 1 14 0"/>
+    </symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24">
+      <rect x="6" y="6" width="12" height="12" rx="2"/>
+    </symbol>
   </svg>
 
   <header class="site-header">
     <div class="wrap header-inner">
-      <a class="brand" href="#top" aria-label="石径松轩首页">
+      <a class="brand" href="#home" aria-label="石径松轩首页">
         <span class="brand-mark" aria-hidden="true">
           <svg viewBox="0 0 32 32"><path d="M9 21c3.4 0 4.2-3.1 7-3.1s3.6 3.1 7 3.1M16 7.5l4.2 7.2H11.8L16 7.5Zm0 7.2v3.2"/></svg>
         </span>
@@ -98,122 +109,122 @@
           <span class="brand-en">Serlane</span>
         </span>
       </a>
-      <nav class="main-nav" aria-label="主导航">
-        <a href="#sites">收藏</a>
-        <a href="#transfer">传输</a>
-        <a href="#base64">Base64</a>
+      <nav class="page-nav" aria-label="页面">
+        <a href="#shi" data-page-link="shi" title="文件与文字">识</a>
+        <a href="#jing" data-page-link="jing" title="Base64">静</a>
+        <a href="#song" data-page-link="song" title="AI 对话">颂</a>
+        <a href="#xuan" data-page-link="xuan" title="网页跳转">翾</a>
       </nav>
     </div>
   </header>
 
-  <main class="wrap" id="main">
-    <section class="hero" aria-labelledby="hero-title">
-      <div class="hero-copy">
-        <p class="eyebrow"><span class="eyebrow-dot" aria-hidden="true"></span>你的安静起点</p>
-        <h1 id="hero-title">把常去的地方，<br><span class="hero-accent">留在手边。</span></h1>
-        <p class="hero-description">收藏常用网站，点对点传送文件与文字，顺手完成一次 Base64 转换。</p>
-        <div class="hero-badges" aria-label="功能">
-          <span><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg>本地收藏</span>
-          <span><svg class="icon" aria-hidden="true"><use href="#i-device"/></svg>设备直连</span>
-          <span><svg class="icon" aria-hidden="true"><use href="#i-sparkle"/></svg>轻量无依赖</span>
+  <main class="wrap">
+    <section class="view is-active" data-view="home" id="view-home">
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="hero-copy">
+          <p class="eyebrow"><span class="eyebrow-dot" aria-hidden="true"></span>你的安静起点</p>
+          <h1 id="hero-title">把常去的地方，<br><span class="hero-accent">留在手边。</span></h1>
+          <p class="hero-description">收藏常用网站，打开想去的地方。文件、编码与对话，分别住在识、静、颂里。</p>
+          <div class="hero-badges" aria-label="功能">
+            <span><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg>本地收藏</span>
+            <span><svg class="icon" aria-hidden="true"><use href="#i-device"/></svg>设备直连</span>
+            <span><svg class="icon" aria-hidden="true"><use href="#i-sparkle"/></svg>轻量无依赖</span>
+          </div>
         </div>
-      </div>
 
-      <div class="launcher-wrap">
-        <form class="launcher" id="launcher" novalidate>
-          <div class="launcher-head">
-            <span>打开一个网址</span>
-            <span class="key-hint">Enter</span>
-          </div>
-          <div class="url-row">
-            <svg class="icon url-icon" aria-hidden="true"><use href="#i-link"/></svg>
-            <label class="sr-only" for="url-input">网址</label>
-            <input id="url-input" type="text" inputmode="url" autocomplete="url"
-                   autocapitalize="off" autocorrect="off" spellcheck="false"
-                   placeholder="输入域名或粘贴链接" aria-describedby="url-message">
-            <button class="url-clear" id="url-clear" type="button" aria-label="清空网址" hidden>
-              <svg class="icon" aria-hidden="true"><use href="#i-close"/></svg>
-            </button>
-          </div>
-          <div class="launcher-foot">
-            <span class="launcher-label">打开方式</span>
-            <div class="mode-group" role="group" aria-label="选择打开方式">
-              <a class="mode-button mode-primary" id="newtab-link" href="#"
-                 target="_blank" rel="noopener noreferrer" aria-disabled="true">
-                <svg class="icon" aria-hidden="true"><use href="#i-newtab"/></svg>
-                新标签页
-              </a>
-              <button class="mode-button" type="button" data-mode="frame">
-                <svg class="icon" aria-hidden="true"><use href="#i-frame"/></svg>
-                内嵌浏览
-              </button>
-              <button class="mode-button" type="button" data-mode="redirect">
-                <svg class="icon" aria-hidden="true"><use href="#i-redirect"/></svg>
-                当前页
+        <div class="launcher-wrap">
+          <form class="launcher" data-launcher novalidate>
+            <div class="launcher-head">
+              <span>打开一个网址</span>
+              <span class="key-hint">Enter</span>
+            </div>
+            <div class="url-row">
+              <svg class="icon url-icon" aria-hidden="true"><use href="#i-link"/></svg>
+              <input class="url-input" type="text" inputmode="url" autocomplete="url"
+                     autocapitalize="off" autocorrect="off" spellcheck="false"
+                     placeholder="输入域名或粘贴链接" aria-label="网址">
+              <button class="url-clear" type="button" aria-label="清空网址" hidden>
+                <svg class="icon" aria-hidden="true"><use href="#i-close"/></svg>
               </button>
             </div>
+            <div class="launcher-foot">
+              <span class="launcher-label">打开方式</span>
+              <div class="mode-group" role="group" aria-label="选择打开方式">
+                <a class="mode-button mode-primary newtab-link" href="#"
+                   target="_blank" rel="noopener noreferrer" aria-disabled="true">
+                  <svg class="icon" aria-hidden="true"><use href="#i-newtab"/></svg>
+                  新标签页
+                </a>
+                <button class="mode-button" type="button" data-mode="frame">
+                  <svg class="icon" aria-hidden="true"><use href="#i-frame"/></svg>
+                  内嵌浏览
+                </button>
+                <button class="mode-button" type="button" data-mode="redirect">
+                  <svg class="icon" aria-hidden="true"><use href="#i-redirect"/></svg>
+                  当前页
+                </button>
+              </div>
+            </div>
+            <p class="form-message" role="status" aria-live="polite" hidden></p>
+          </form>
+          <p class="launcher-note">直接输入域名即可，自动补全 <span>https://</span></p>
+        </div>
+      </section>
+
+      <section class="section" id="sites" aria-labelledby="sites-title">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow"><span class="eyebrow-dot" aria-hidden="true"></span>常用入口</p>
+            <h2 id="sites-title">收藏</h2>
           </div>
-          <p class="form-message" id="url-message" role="status" aria-live="polite" hidden></p>
-        </form>
-        <p class="launcher-note">直接输入域名即可，自动补全 <span>https://</span></p>
-      </div>
+          <div class="section-tools">
+            <span class="count-pill" id="site-count">0 个站点</span>
+            <button class="btn btn-secondary" id="add-site" type="button">
+              <svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>
+              添加站点
+            </button>
+          </div>
+        </div>
+
+        <div class="empty-panel" id="empty-state">
+          <div class="empty-icon" aria-hidden="true">
+            <svg class="icon"><use href="#i-sparkle"/></svg>
+          </div>
+          <h3>给自己的日常留一扇门</h3>
+          <p>收藏常用网站，下次打开就能直接抵达。</p>
+          <button class="btn btn-primary" id="empty-add" type="button">添加第一个站点</button>
+        </div>
+
+        <div class="site-grid" id="site-grid" hidden></div>
+      </section>
     </section>
 
-    <section class="section" id="sites" aria-labelledby="sites-title">
-      <div class="section-head">
+    <section class="view page-view" data-view="shi" id="view-shi" hidden>
+      <header class="page-heading">
         <div>
-          <p class="eyebrow"><span class="eyebrow-dot" aria-hidden="true"></span>常用入口</p>
-          <h2 id="sites-title">收藏</h2>
+          <p class="eyebrow"><span class="eyebrow-dot" aria-hidden="true"></span>识 · 互传</p>
+          <h1>把内容，直接递过去。</h1>
+          <p>File and text, straight to the other device.</p>
         </div>
-        <div class="section-tools">
-          <span class="count-pill" id="site-count">0 个站点</span>
-          <button class="btn btn-secondary" id="add-site" type="button">
-            <svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>
-            添加站点
-          </button>
-        </div>
-      </div>
-
-      <div class="empty-panel" id="empty-state">
-        <div class="empty-icon" aria-hidden="true">
-          <svg class="icon"><use href="#i-sparkle"/></svg>
-        </div>
-        <h3>给自己的日常留一扇门</h3>
-        <p>收藏常用网站，下次打开就能直接抵达。</p>
-        <button class="btn btn-primary" id="empty-add" type="button">添加第一个站点</button>
-      </div>
-
-      <div class="site-grid" id="site-grid" hidden></div>
-    </section>
-
-    <section class="section" id="transfer" aria-labelledby="transfer-title">
-      <div class="section-head">
-        <div>
-          <p class="eyebrow"><span class="eyebrow-dot" aria-hidden="true"></span>点对点传输</p>
-          <h2 id="transfer-title">文件与文字</h2>
-        </div>
-        <span class="soft-tag">
-          <svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg>
-          WebRTC 直连
-        </span>
-      </div>
+        <span class="page-glyph" aria-hidden="true">识</span>
+      </header>
 
       <div class="transfer-card">
         <div class="transfer-intro" id="transfer-intro">
           <div class="transfer-intro-copy">
             <p class="kicker">PEER TO PEER</p>
-            <h3>把内容直接递给<br>另一台设备。</h3>
-            <p class="transfer-description">不需要上传云端。连接建立后，文件与文字只在两台设备之间传输。</p>
+            <h2>不用上传云端，<br>在设备之间直连。</h2>
+            <p class="transfer-description">连接建立后，文字与文件只在两台设备之间传输。你只需要创建一个房间，把邀请码交给对方。</p>
             <ul class="feature-list">
-              <li><svg class="icon" aria-hidden="true"><use href="#i-chat"/></svg>文字直接收发</li>
-              <li><svg class="icon" aria-hidden="true"><use href="#i-folder"/></svg>文件与文件夹</li>
+              <li><svg class="icon" aria-hidden="true"><use href="#i-chat"/></svg>文字直传</li>
+              <li><svg class="icon" aria-hidden="true"><use href="#i-folder"/></svg>多文件与文件夹</li>
               <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg>端到端加密</li>
             </ul>
             <button class="btn btn-primary" id="create-room" type="button">
               <svg class="icon" aria-hidden="true"><use href="#i-device"/></svg>
-              创建传输房间
+              创建房间
             </button>
-            <p class="transfer-note">需要联网完成握手；在同一局域网内，数据直连速度更快。</p>
+            <p class="transfer-note">需要联网完成握手；局域网内数据直连，速度更快。</p>
           </div>
           <div class="transfer-visual" aria-hidden="true">
             <div class="visual-orbit orbit-one"></div>
@@ -232,6 +243,20 @@
             </div>
             <p class="visual-caption">直接连接，不在云端停留</p>
           </div>
+
+          <form class="join-strip" id="join-form" novalidate>
+            <div class="join-copy">
+              <span>收到邀请码？</span>
+              <p>在另一台设备输入房间邀请码。</p>
+            </div>
+            <div class="join-controls">
+              <label class="sr-only" for="join-code">邀请码</label>
+              <input id="join-code" type="text" maxlength="20" autocomplete="off"
+                     autocapitalize="characters" spellcheck="false" placeholder="输入邀请码">
+              <button class="btn btn-secondary" type="submit">加入</button>
+            </div>
+            <p class="form-message join-message" id="join-message" role="status" aria-live="polite" hidden></p>
+          </form>
         </div>
 
         <div class="transfer-room" id="transfer-room" hidden>
@@ -249,18 +274,16 @@
             </div>
           </div>
 
-          <div class="share-box" id="share-box" hidden>
-            <div class="share-copy">
-              <span class="share-label">分享链接</span>
-              <p>在另一台设备打开，即可连接。</p>
+          <div class="invite-box" id="invite-box" hidden>
+            <div class="invite-info">
+              <span class="invite-label">房间邀请码</span>
+              <strong class="invite-code" id="invite-code">—</strong>
+              <p>在另一台设备输入这串邀请码。</p>
             </div>
-            <div class="share-control">
-              <input id="share-link" type="text" readonly aria-label="分享链接">
-              <button class="btn btn-secondary btn-small" id="copy-share" type="button">
-                <svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg>
-                复制
-              </button>
-            </div>
+            <button class="btn btn-secondary btn-small" id="copy-invite" type="button">
+              <svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg>
+              复制邀请码
+            </button>
           </div>
 
           <div class="room-grid" id="room-workspace">
@@ -336,14 +359,15 @@
       <input id="folder-input" type="file" webkitdirectory directory multiple hidden>
     </section>
 
-    <section class="section" id="base64" aria-labelledby="base64-title">
-      <div class="section-head">
+    <section class="view page-view" data-view="jing" id="view-jing" hidden>
+      <header class="page-heading">
         <div>
-          <p class="eyebrow"><span class="eyebrow-dot" aria-hidden="true"></span>小巧工具</p>
-          <h2 id="base64-title">Base64</h2>
+          <p class="eyebrow"><span class="eyebrow-dot" aria-hidden="true"></span>静 · 编码</p>
+          <h1>把文字，换一种写法。</h1>
+          <p>UTF-8 · Base64 · URL-safe</p>
         </div>
-        <span class="soft-tag">UTF-8</span>
-      </div>
+        <span class="page-glyph" aria-hidden="true">静</span>
+      </header>
 
       <div class="utility-card">
         <div class="utility-toolbar">
@@ -385,6 +409,190 @@
           <p class="local-note"><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg>转换只在本机完成</p>
         </div>
       </div>
+    </section>
+
+    <section class="view page-view" data-view="song" id="view-song" hidden>
+      <header class="page-heading">
+        <div>
+          <p class="eyebrow"><span class="eyebrow-dot" aria-hidden="true"></span>颂 · 对话</p>
+          <h1>和 AI，聊一会儿。</h1>
+          <p>DeepSeek · 联网搜索 · 深度思考</p>
+        </div>
+        <span class="page-glyph" aria-hidden="true">颂</span>
+      </header>
+
+      <div class="login-panel" id="login-panel">
+        <div class="login-card">
+          <span class="login-mark" aria-hidden="true">颂</span>
+          <div class="login-copy">
+            <p class="kicker">SIGN IN</p>
+            <h2>登录后开始对话</h2>
+            <p>使用账号密码，或粘贴自己的 DeepSeek API Key。</p>
+          </div>
+
+          <div class="auth-switch" role="group" aria-label="登录方式">
+            <button class="auth-switch-button is-active" id="auth-mode-account" type="button" aria-pressed="true">账号密码</button>
+            <button class="auth-switch-button" id="auth-mode-key" type="button" aria-pressed="false">API Key</button>
+          </div>
+
+          <div id="auth-account-panel">
+            <form class="login-form" id="login-form">
+              <label class="field-label" for="login-user">账号</label>
+              <input class="text-field" id="login-user" type="text" autocomplete="username" placeholder="账号">
+              <label class="field-label" for="login-pass">密码</label>
+              <input class="text-field" id="login-pass" type="password" autocomplete="current-password" placeholder="密码">
+              <p class="form-message login-message" id="login-message" role="alert" hidden></p>
+              <button class="btn btn-primary login-submit" id="login-submit" type="submit">登录</button>
+            </form>
+          </div>
+
+          <div id="auth-key-panel" hidden>
+            <form class="login-form" id="key-form">
+              <label class="field-label" for="key-input">自己的 API Key</label>
+              <input class="text-field" id="key-input" type="password" autocomplete="off" spellcheck="false" placeholder="sk-...">
+              <p class="form-message login-message" id="key-message" role="alert" hidden></p>
+              <button class="btn btn-primary login-submit" id="key-submit" type="submit">使用此 Key</button>
+            </form>
+            <p class="key-note">仅用于本机，可在账号数据中删除。</p>
+          </div>
+
+          <button class="text-button auth-manage" id="manage-auth" type="button">管理本机账号与 Key</button>
+          <p class="login-note">账号、密码与 API Key 只保存在本机浏览器。请勿公开部署含真实 Key 的页面。</p>
+        </div>
+      </div>
+
+      <div class="chat-app" id="chat-app" hidden>
+        <div class="chat-shell">
+          <div class="chat-head">
+            <div class="chat-identity">
+              <span class="chat-avatar" aria-hidden="true">颂</span>
+              <div>
+                <strong id="chat-user">已登录</strong>
+                <span id="chat-model">DeepSeek</span>
+              </div>
+            </div>
+            <div class="chat-head-actions">
+              <button class="chat-toggle is-on" id="chat-search" type="button" aria-pressed="true" title="联网搜索与读取链接">
+                <svg class="icon" aria-hidden="true"><use href="#i-search"/></svg>
+                联网
+              </button>
+              <button class="chat-toggle" id="chat-think" type="button" aria-pressed="false" title="开启深度思考">
+                <svg class="icon" aria-hidden="true"><use href="#i-sparkle"/></svg>
+                思考
+              </button>
+              <button class="btn btn-quiet btn-small" id="chat-new" type="button">新对话</button>
+              <button class="btn btn-quiet btn-small" id="chat-account" type="button">
+                <svg class="icon" aria-hidden="true"><use href="#i-user"/></svg>
+                账号
+              </button>
+            </div>
+          </div>
+
+          <div class="chat-messages" id="chat-messages" role="log" aria-live="polite">
+            <div class="chat-welcome" id="chat-welcome">
+              <span class="chat-orb" aria-hidden="true">颂</span>
+              <h3>有什么想聊的？</h3>
+              <p>可以直接提问。开启联网后，DeepSeek 会判断是否需要搜索或读取链接。</p>
+            </div>
+          </div>
+
+          <p class="chat-status" id="chat-status" role="status" aria-live="polite" hidden></p>
+
+          <form class="chat-form" id="chat-form">
+            <label class="sr-only" for="chat-input">消息</label>
+            <textarea id="chat-input" rows="2" placeholder="问点什么…" disabled></textarea>
+            <div class="chat-form-foot">
+              <span class="composer-hint">Enter 发送 · Shift + Enter 换行</span>
+              <div class="chat-send-actions">
+                <button class="btn btn-quiet btn-small" id="chat-stop" type="button" hidden>
+                  <svg class="icon" aria-hidden="true"><use href="#i-stop"/></svg>
+                  停止
+                </button>
+                <button class="btn btn-primary btn-small" id="chat-send" type="submit" disabled>
+                  <svg class="icon" aria-hidden="true"><use href="#i-send"/></svg>
+                  发送
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      </div>
+    </section>
+
+    <section class="view page-view" data-view="xuan" id="view-xuan" hidden>
+      <header class="page-heading page-heading-center">
+        <div>
+          <p class="eyebrow"><span class="eyebrow-dot" aria-hidden="true"></span>翾 · 出发</p>
+          <h1>去往你想去的地方。</h1>
+          <p>网页跳转与收藏，都在这里。</p>
+        </div>
+        <span class="page-glyph" aria-hidden="true">翾</span>
+      </header>
+
+      <div class="xuan-launcher-wrap">
+        <form class="launcher" data-launcher novalidate>
+          <div class="launcher-head">
+            <span>打开一个网址</span>
+            <span class="key-hint">Enter</span>
+          </div>
+          <div class="url-row">
+            <svg class="icon url-icon" aria-hidden="true"><use href="#i-link"/></svg>
+            <input class="url-input" type="text" inputmode="url" autocomplete="url"
+                   autocapitalize="off" autocorrect="off" spellcheck="false"
+                   placeholder="输入域名或粘贴链接" aria-label="网址">
+            <button class="url-clear" type="button" aria-label="清空网址" hidden>
+              <svg class="icon" aria-hidden="true"><use href="#i-close"/></svg>
+            </button>
+          </div>
+          <div class="launcher-foot">
+            <span class="launcher-label">打开方式</span>
+            <div class="mode-group" role="group" aria-label="选择打开方式">
+              <a class="mode-button mode-primary newtab-link" href="#"
+                 target="_blank" rel="noopener noreferrer" aria-disabled="true">
+                <svg class="icon" aria-hidden="true"><use href="#i-newtab"/></svg>
+                新标签页
+              </a>
+              <button class="mode-button" type="button" data-mode="frame">
+                <svg class="icon" aria-hidden="true"><use href="#i-frame"/></svg>
+                内嵌浏览
+              </button>
+              <button class="mode-button" type="button" data-mode="redirect">
+                <svg class="icon" aria-hidden="true"><use href="#i-redirect"/></svg>
+                当前页
+              </button>
+            </div>
+          </div>
+          <p class="form-message" role="status" aria-live="polite" hidden></p>
+        </form>
+        <p class="launcher-note">直接输入域名即可，自动补全 <span>https://</span></p>
+      </div>
+
+      <section class="section" aria-labelledby="xuan-sites-title">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow"><span class="eyebrow-dot" aria-hidden="true"></span>常用入口</p>
+            <h2 id="xuan-sites-title">收藏</h2>
+          </div>
+          <div class="section-tools">
+            <span class="count-pill" id="xuan-site-count">0 个站点</span>
+            <button class="btn btn-secondary" id="xuan-add-site" type="button">
+              <svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>
+              添加站点
+            </button>
+          </div>
+        </div>
+
+        <div class="empty-panel" id="xuan-empty-state">
+          <div class="empty-icon" aria-hidden="true">
+            <svg class="icon"><use href="#i-sparkle"/></svg>
+          </div>
+          <h3>收藏常用站点</h3>
+          <p>留住常去的地方，下一次点开就走。</p>
+          <button class="btn btn-primary" id="xuan-empty-add" type="button">添加第一个站点</button>
+        </div>
+
+        <div class="site-grid" id="xuan-site-grid" hidden></div>
+      </section>
     </section>
   </main>
 
@@ -484,12 +692,37 @@
     </div>
   </dialog>
 
+  <dialog class="modal" id="account-dialog" aria-labelledby="account-dialog-title">
+    <div class="modal-card">
+      <div class="modal-head">
+        <div>
+          <p class="kicker">ACCOUNT DATA</p>
+          <h2 id="account-dialog-title">本机账号与 Key</h2>
+        </div>
+        <button class="icon-button" type="button" data-close="account-dialog" aria-label="关闭">
+          <svg class="icon" aria-hidden="true"><use href="#i-close"/></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <p class="vault-note">以下账号、密码和 API Key 保存在当前浏览器，可逐条删除或全部清除。</p>
+        <div class="vault-list" id="vault-list"></div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-danger btn-quiet" id="vault-clear" type="button">清除全部</button>
+        <span class="modal-spacer"></span>
+        <button class="btn btn-quiet" id="vault-logout" type="button">退出登录</button>
+        <button class="btn btn-primary" type="button" data-close="account-dialog">关闭</button>
+      </div>
+    </div>
+  </dialog>
+
   <div class="toast" id="toast" role="status" aria-live="polite" hidden>
     <span id="toast-text"></span>
     <button id="toast-action" type="button" hidden>撤销</button>
   </div>
 
   <noscript><p class="noscript">石径松轩需要 JavaScript 才能使用。</p></noscript>
+  <script src="chat-accounts.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
